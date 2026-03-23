@@ -73,6 +73,71 @@
           </el-card>
         </el-col>
       </el-row>
+
+      <!-- 文献搜索区域 -->
+      <div class="search-section">
+        <h2 class="section-title">🔍 搜索文献</h2>
+        <div class="search-bar">
+          <el-input
+            v-model="searchKeyword"
+            placeholder="输入文献标题、作者关键词..."
+            size="large"
+            clearable
+            @keyup.enter="doSearch"
+            @clear="clearSearch"
+          >
+            <template #prefix>
+              <el-icon><Search /></el-icon>
+            </template>
+          </el-input>
+          <el-button type="primary" size="large" @click="doSearch" :loading="searching">
+            搜索
+          </el-button>
+        </div>
+
+        <!-- 搜索结果 -->
+        <div v-if="searchPerformed" class="search-results">
+          <div class="results-header">
+            <span class="results-count">找到 <strong>{{ searchResults.length }}</strong> 篇相关文献</span>
+            <el-button v-if="searchResults.length > 0" text type="primary" @click="clearSearch">清除搜索</el-button>
+          </div>
+
+          <el-empty v-if="searchResults.length === 0" description="未找到匹配的文献，试试其他关键词？">
+            <el-button type="primary" @click="$router.push('/documents')">去上传文献</el-button>
+          </el-empty>
+
+          <div v-else class="results-list">
+            <el-card v-for="doc in searchResults" :key="doc.id" class="result-card" shadow="hover">
+              <div class="result-content">
+                <div class="result-main">
+                  <h4 class="result-title" v-html="highlightKeyword(doc.title)"></h4>
+                  <div class="result-meta">
+                    <span v-if="doc.authors" class="meta-item">
+                      <el-icon><User /></el-icon>
+                      <span v-html="highlightKeyword(doc.authors)"></span>
+                    </span>
+                    <span class="meta-item">
+                      <el-icon><Calendar /></el-icon>
+                      {{ formatDate(doc.upload_time) }}
+                    </span>
+                    <el-tag :type="statusType(doc.status)" size="small">{{ statusText(doc.status) }}</el-tag>
+                    <span v-if="doc.chunk_count" class="meta-item">{{ doc.chunk_count }} 个分块</span>
+                  </div>
+                  <p v-if="doc.abstract" class="result-abstract">{{ doc.abstract.slice(0, 200) }}{{ doc.abstract.length > 200 ? '...' : '' }}</p>
+                </div>
+                <div class="result-actions">
+                  <el-button size="small" type="primary" plain @click="goChat(doc)">
+                    <el-icon><ChatDotRound /></el-icon> 提问
+                  </el-button>
+                  <el-button size="small" plain @click="$router.push('/documents')">
+                    <el-icon><View /></el-icon> 详情
+                  </el-button>
+                </div>
+              </div>
+            </el-card>
+          </div>
+        </div>
+      </div>
     </el-main>
   </div>
 </template>
@@ -90,11 +155,63 @@ const authStore = useAuthStore()
 const activeMenu = computed(() => route.path)
 const stats = ref({})
 
+// 搜索相关
+const searchKeyword = ref('')
+const searchResults = ref([])
+const searchPerformed = ref(false)
+const searching = ref(false)
+
 const handleCommand = (command) => {
   if (command === 'logout') {
     authStore.logout()
     router.push('/login')
   }
+}
+
+const doSearch = async () => {
+  const keyword = searchKeyword.value.trim()
+  if (!keyword) return
+  searching.value = true
+  searchPerformed.value = true
+  try {
+    const data = await documentAPI.getList({ page: 1, per_page: 50, search: keyword })
+    searchResults.value = data.documents || []
+  } catch (err) {
+    searchResults.value = []
+  } finally {
+    searching.value = false
+  }
+}
+
+const clearSearch = () => {
+  searchKeyword.value = ''
+  searchResults.value = []
+  searchPerformed.value = false
+}
+
+const highlightKeyword = (text) => {
+  if (!text || !searchKeyword.value.trim()) return text || ''
+  const kw = searchKeyword.value.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return text.replace(new RegExp(`(${kw})`, 'gi'), '<mark>$1</mark>')
+}
+
+const formatDate = (dateStr) => {
+  if (!dateStr) return ''
+  return new Date(dateStr).toLocaleString('zh-CN')
+}
+
+const statusType = (status) => {
+  const map = { pending: 'info', processing: '', ready: 'success', failed: 'danger' }
+  return map[status] || 'info'
+}
+
+const statusText = (status) => {
+  const map = { pending: '待处理', processing: '处理中', ready: '已就绪', failed: '失败' }
+  return map[status] || status
+}
+
+const goChat = (doc) => {
+  router.push({ path: '/chat', query: { doc_id: doc.id } })
 }
 
 onMounted(async () => {
@@ -218,5 +335,125 @@ onMounted(async () => {
 
 .stats {
   margin-top: 12px;
+}
+
+/* 搜索区域 */
+.search-section {
+  margin-top: 48px;
+}
+
+.section-title {
+  font-size: 20px;
+  color: #303133;
+  margin-bottom: 20px;
+}
+
+.search-bar {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.search-bar .el-input {
+  flex: 1;
+}
+
+.search-results {
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.results-count {
+  font-size: 14px;
+  color: #909399;
+}
+
+.results-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.result-card {
+  cursor: default;
+  transition: box-shadow 0.2s;
+}
+
+.result-card:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+.result-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+}
+
+.result-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.result-title {
+  font-size: 16px;
+  color: #303133;
+  margin: 0 0 8px 0;
+  line-height: 1.4;
+}
+
+.result-title :deep(mark) {
+  background: #ffd54f;
+  color: inherit;
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+.result-meta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: #909399;
+}
+
+.meta-item :deep(mark) {
+  background: #ffd54f;
+  color: inherit;
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+.result-abstract {
+  font-size: 13px;
+  color: #606266;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.result-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
 }
 </style>
