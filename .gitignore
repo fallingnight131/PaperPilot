@@ -1,0 +1,39 @@
+# ========== Python ==========
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# 虚拟环境
+venv/
+.venv/
+
+# ========== 环境变量（含敏感信息）==========
+.env
+
+# ========== 数据库 ==========
+*.db
+*.sqlite3
+
+# ========== 后端运行时目录 ==========
+backend/uploads/
+backend/chroma_db/
+
+# ========== Node.js ==========
+node_modules/
+frontend/dist/
+
+# ========== IDE / 编辑器 ==========
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ========== 日志 ==========
+*.log
