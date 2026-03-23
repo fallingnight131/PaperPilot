@@ -21,6 +21,7 @@
     </div>
 
     <div class="card-actions">
+      <el-button size="small" type="primary" @click="$emit('preview', document)" :disabled="document.status !== 'ready'">浏览</el-button>
       <el-button size="small" @click="$emit('view', document)">详情</el-button>
       <el-button size="small" type="success" @click="$emit('summarize', document)" :disabled="document.status !== 'ready'">
         解读
@@ -46,7 +47,7 @@ const props = defineProps({
   document: { type: Object, required: true },
 })
 
-defineEmits(['view', 'summarize', 'delete'])
+defineEmits(['view', 'summarize', 'delete', 'preview'])
 
 const statusType = computed(() => {
   const map = { pending: 'info', processing: '', ready: 'success', failed: 'danger' }

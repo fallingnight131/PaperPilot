@@ -3,7 +3,7 @@ import threading
 import time
 from datetime import datetime
 
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify, current_app, send_file
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from werkzeug.utils import secure_filename
 
@@ -255,3 +255,24 @@ def get_document_status(doc_id):
         "chunk_count": doc.chunk_count,
         "message": doc.error_message if doc.status == "failed" else "",
     })
+
+
+@documents_bp.route("/<int:doc_id>/preview", methods=["GET"])
+@jwt_required(locations=["headers", "query_string"])
+def preview_document(doc_id):
+    """在线预览 PDF 文件，支持 header 或 ?token=xxx 传递 JWT"""
+    user_id = int(get_jwt_identity())
+    doc = Document.query.filter_by(id=doc_id, user_id=user_id).first()
+    if not doc:
+        return error_response("文献不存在", status_code=404)
+
+    file_path = os.path.abspath(doc.file_path)
+    if not doc.file_path or not os.path.exists(file_path):
+        return error_response("文件不存在", status_code=404)
+
+    return send_file(
+        file_path,
+        mimetype="application/pdf",
+        as_attachment=False,
+        download_name=doc.filename or "document.pdf",
+    )

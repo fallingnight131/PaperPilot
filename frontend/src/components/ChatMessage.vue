@@ -17,7 +17,7 @@
             <div v-for="(source, idx) in message.sources" :key="idx" class="source-item">
               <div class="source-header">
                 <el-tag size="small" type="info">[{{ idx + 1 }}]</el-tag>
-                <span class="source-title">{{ source.doc_title || '未知文献' }}</span>
+                <span class="source-title source-link" @click="handlePreviewSource(source)">{{ source.doc_title || '未知文献' }}</span>
                 <el-tag size="small" v-if="source.page_number">第{{ source.page_number }}页</el-tag>
                 <el-tag size="small" type="success" v-if="source.score">
                   相似度 {{ (source.score * 100).toFixed(1) }}%
@@ -42,6 +42,18 @@ const props = defineProps({
     required: true,
   },
 })
+
+const emit = defineEmits(['preview-doc'])
+
+const handlePreviewSource = (source) => {
+  if (source.doc_id) {
+    emit('preview-doc', {
+      docId: source.doc_id,
+      docTitle: source.doc_title || '文献预览',
+      page: source.page_number || 0,
+    })
+  }
+}
 
 // Markdown 渲染，并高亮引用编号 [1] [2] 等
 const renderedContent = computed(() => {
@@ -182,6 +194,15 @@ const renderedContent = computed(() => {
   font-size: 13px;
   font-weight: 500;
   color: #303133;
+}
+
+.source-link {
+  cursor: pointer;
+  color: #409eff;
+}
+
+.source-link:hover {
+  text-decoration: underline;
 }
 
 .source-content {

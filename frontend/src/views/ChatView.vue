@@ -61,6 +61,7 @@
             v-for="(msg, idx) in chatStore.messages"
             :key="idx"
             :message="msg"
+            @preview-doc="handlePreviewDoc"
           />
 
           <!-- 加载动画 -->
@@ -110,6 +111,9 @@
         </div>
       </main>
     </div>
+
+    <!-- PDF 预览 -->
+    <pdf-viewer v-model="showPdfViewer" :doc-id="previewDocId" :doc-title="previewDocTitle" :page="previewPage" />
   </div>
 </template>
 
@@ -121,6 +125,7 @@ import { useAuthStore } from '../stores/auth'
 import { useChatStore } from '../stores/chat'
 import { documentAPI } from '../api'
 import ChatMessage from '../components/ChatMessage.vue'
+import PdfViewer from '../components/PdfViewer.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -132,6 +137,17 @@ const inputText = ref('')
 const selectedDocIds = ref([])
 const showDocSelector = ref(false)
 const availableDocs = ref([])
+const showPdfViewer = ref(false)
+const previewDocId = ref(null)
+const previewDocTitle = ref('')
+const previewPage = ref(0)
+
+const handlePreviewDoc = (info) => {
+  previewDocId.value = info.docId
+  previewDocTitle.value = info.docTitle || '文献预览'
+  previewPage.value = info.page || 0
+  showPdfViewer.value = true
+}
 
 const handleHeaderCommand = (command) => {
   if (command === 'logout') {

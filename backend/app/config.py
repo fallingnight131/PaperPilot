@@ -19,6 +19,8 @@ class Config:
     # JWT
     JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-secret-key-change-in-production")
     JWT_ACCESS_TOKEN_EXPIRES = 86400  # 24 小时
+    JWT_TOKEN_LOCATION = ["headers", "query_string"]
+    JWT_QUERY_STRING_NAME = "token"
 
     # Upload
     UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER", "./uploads")

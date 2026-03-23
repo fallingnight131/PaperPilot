@@ -48,6 +48,7 @@
           @view="handleView"
           @summarize="handleSummarize"
           @delete="handleDelete"
+          @preview="openPreview"
         />
         <el-empty v-if="documents.length === 0" description="暂无文献，点击上方按钮上传" />
       </div>
@@ -65,8 +66,9 @@
         <el-table-column label="上传时间" width="170">
           <template #default="{ row }">{{ formatDate(row.upload_time) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="200" align="center">
+        <el-table-column label="操作" width="280" align="center">
           <template #default="{ row }">
+            <el-button size="small" type="primary" @click="openPreview(row)" :disabled="row.status !== 'ready'">浏览</el-button>
             <el-button size="small" @click="handleView(row)">详情</el-button>
             <el-button size="small" type="success" @click="handleSummarize(row)" :disabled="row.status !== 'ready'">解读</el-button>
             <el-button size="small" type="danger" @click="handleDelete(row)">删除</el-button>
@@ -102,9 +104,14 @@
           <p>{{ detailDoc.abstract }}</p>
         </div>
 
+        <el-button type="primary" style="margin-top: 16px; width: 100%" @click="openPreview(detailDoc)" :disabled="detailDoc.status !== 'ready'">📄 浏览原文</el-button>
+
         <tool-panel :document="detailDoc" class="tool-section" />
       </template>
     </el-drawer>
+
+    <!-- PDF 预览 -->
+    <pdf-viewer v-model="showPdfViewer" :doc-id="previewDocId" :doc-title="previewDocTitle" />
   </div>
 </template>
 
@@ -117,6 +124,7 @@ import { documentAPI } from '../api'
 import UploadDialog from '../components/UploadDialog.vue'
 import DocumentCard from '../components/DocumentCard.vue'
 import ToolPanel from '../components/ToolPanel.vue'
+import PdfViewer from '../components/PdfViewer.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -130,6 +138,9 @@ const viewMode = ref('card')
 const showUploadDialog = ref(false)
 const showDetail = ref(false)
 const detailDoc = ref(null)
+const showPdfViewer = ref(false)
+const previewDocId = ref(null)
+const previewDocTitle = ref('')
 
 // 状态轮询 timer map
 const pollingTimers = ref({})
@@ -232,6 +243,12 @@ const onUploaded = (docId) => {
 const handleView = (doc) => {
   detailDoc.value = doc
   showDetail.value = true
+}
+
+const openPreview = (doc) => {
+  previewDocId.value = doc.id
+  previewDocTitle.value = doc.title
+  showPdfViewer.value = true
 }
 
 const handleSummarize = (doc) => {

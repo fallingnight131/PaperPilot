@@ -126,11 +126,11 @@
                   <p v-if="doc.abstract" class="result-abstract">{{ doc.abstract.slice(0, 200) }}{{ doc.abstract.length > 200 ? '...' : '' }}</p>
                 </div>
                 <div class="result-actions">
-                  <el-button size="small" type="primary" plain @click="goChat(doc)">
-                    <el-icon><ChatDotRound /></el-icon> 提问
+                  <el-button size="small" type="primary" plain @click="openPreview(doc)">
+                    <el-icon><View /></el-icon> 浏览
                   </el-button>
-                  <el-button size="small" plain @click="$router.push('/documents')">
-                    <el-icon><View /></el-icon> 详情
+                  <el-button size="small" plain @click="goChat(doc)">
+                    <el-icon><ChatDotRound /></el-icon> 提问
                   </el-button>
                 </div>
               </div>
@@ -139,6 +139,9 @@
         </div>
       </div>
     </el-main>
+
+    <!-- PDF 预览 -->
+    <pdf-viewer v-model="showPdfViewer" :doc-id="previewDocId" :doc-title="previewDocTitle" />
   </div>
 </template>
 
@@ -147,6 +150,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { documentAPI, chatAPI } from '../api'
+import PdfViewer from '../components/PdfViewer.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -160,6 +164,11 @@ const searchKeyword = ref('')
 const searchResults = ref([])
 const searchPerformed = ref(false)
 const searching = ref(false)
+
+// PDF 预览
+const showPdfViewer = ref(false)
+const previewDocId = ref(null)
+const previewDocTitle = ref('')
 
 const handleCommand = (command) => {
   if (command === 'logout') {
@@ -208,6 +217,12 @@ const statusType = (status) => {
 const statusText = (status) => {
   const map = { pending: '待处理', processing: '处理中', ready: '已就绪', failed: '失败' }
   return map[status] || status
+}
+
+const openPreview = (doc) => {
+  previewDocId.value = doc.id
+  previewDocTitle.value = doc.title
+  showPdfViewer.value = true
 }
 
 const goChat = (doc) => {

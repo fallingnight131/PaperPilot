@@ -95,6 +95,11 @@ export const documentAPI = {
   getStatus(id) {
     return request.get(`/documents/${id}/status`)
   },
+  getPreviewUrl(id, page) {
+    const token = localStorage.getItem('token')
+    const pageFragment = page > 0 ? `#page=${page}` : ''
+    return `/api/documents/${id}/preview?token=${encodeURIComponent(token)}${pageFragment}`
+  },
 }
 
 // ============ 对话 API ============
