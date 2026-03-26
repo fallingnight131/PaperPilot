@@ -28,12 +28,22 @@
           </el-collapse-item>
         </el-collapse>
       </div>
+
+      <!-- 复制按钮：气泡和引用来源下方 -->
+      <div class="copy-row">
+        <el-tooltip content="复制" placement="top" :show-after="300">
+          <button class="copy-btn" @click="copyContent">
+            <el-icon v-if="copied"><Select /></el-icon>
+            <el-icon v-else><CopyDocument /></el-icon>
+          </button>
+        </el-tooltip>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { marked } from 'marked'
 
 const props = defineProps({
@@ -44,6 +54,26 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['preview-doc'])
+
+const copied = ref(false)
+
+const copyContent = async () => {
+  try {
+    await navigator.clipboard.writeText(props.message.content || '')
+    copied.value = true
+    setTimeout(() => { copied.value = false }, 2000)
+  } catch {
+    // 降级方案
+    const el = document.createElement('textarea')
+    el.value = props.message.content || ''
+    document.body.appendChild(el)
+    el.select()
+    document.execCommand('copy')
+    document.body.removeChild(el)
+    copied.value = true
+    setTimeout(() => { copied.value = false }, 2000)
+  }
+}
 
 const handlePreviewSource = (source) => {
   if (source.doc_id) {
@@ -101,6 +131,43 @@ const renderedContent = computed(() => {
 .message-body {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.copy-row {
+  display: flex;
+  margin-top: 4px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.assistant .copy-row {
+  justify-content: flex-start;
+}
+
+.user .copy-row {
+  justify-content: flex-end;
+}
+
+.message-body:hover .copy-row {
+  opacity: 1;
+}
+
+.copy-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  color: #c0c4cc;
+  font-size: 13px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+}
+
+.copy-btn:hover {
+  color: #409eff;
 }
 
 .message-content {
