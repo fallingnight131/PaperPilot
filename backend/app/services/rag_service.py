@@ -9,9 +9,10 @@ from ..extensions import db
 
 # ---- 系统提示词 ----
 
-SYSTEM_PROMPT_RAG = """你是 PaperPilot 智能文献助手，一位电化学储能材料领域的专业研究助理。
-你的性格温和、专业且乐于助人，擅长基于文献内容回答科研问题。
-回答时保持专业性的同时也要有亲和力。"""
+SYSTEM_PROMPT_RAG = """你是 PaperPilot 文献库问答助手。
+你的唯一职责是根据用户上传的文献库内容回答问题。
+你没有独立的知识储备——你的所有回答必须严格来自用户提供的文献片段。
+如果文献库中没有相关信息，你必须明确告知用户，而不是用自己的训练知识补充。"""
 
 SYSTEM_PROMPT_CASUAL = """你是 PaperPilot 智能文献助手，一位电化学储能材料领域的专业研究助理。
 你的性格温和、专业且乐于助人。你正在一个文献问答平台上与科研人员交流。
@@ -52,12 +53,17 @@ class RAGService:
         5. 解析引用编号
         6. 保存消息并返回结果
         """
-        # 0. 先判断是否为闲聊类问题，避免不必要的 embedding 调用
+        # 0. 先判断问题类型
         is_casual = self._is_casual_query(question)
+        is_library_query = self._is_library_query(question)
 
         if is_casual:
             answer = self._generate_casual_reply(question)
             sources = []
+            retrieved_chunks = []
+        elif is_library_query:
+            # 文献库查询：直接查数据库，避免 LLM 编造文献
+            answer, sources = self._answer_library_query(question, user_id, doc_ids)
             retrieved_chunks = []
         else:
             # 1. 获取问题向量
@@ -75,15 +81,22 @@ class RAGService:
                 answer = self._generate_no_docs_reply(question)
                 sources = []
             else:
-                # 3. 构建 RAG Prompt
-                rag_prompt = self.build_rag_prompt(question, retrieved_chunks)
+                # 3. 过滤低相关度片段
+                MIN_SCORE_THRESHOLD = 0.4
+                relevant_chunks = [c for c in retrieved_chunks if c.get("score", 0) >= MIN_SCORE_THRESHOLD]
 
-                # 4. 调用豆包生成答案
-                system_prompt = SYSTEM_PROMPT_RAG
-                answer = self.llm_client.generate(rag_prompt, system_prompt=system_prompt)
+                if not relevant_chunks:
+                    answer = self._generate_no_docs_reply(question)
+                    sources = []
+                else:
+                    # 4. 构建 RAG Prompt
+                    rag_prompt = self.build_rag_prompt(question, relevant_chunks)
 
-                # 5. 解析引用编号
-                sources = self.parse_citations(answer, retrieved_chunks)
+                    # 5. 调用豆包生成答案（temperature 调低以减少创造性发挥）
+                    answer = self.llm_client.generate(rag_prompt, system_prompt=SYSTEM_PROMPT_RAG, temperature=0.1)
+
+                    # 6. 解析引用编号
+                    sources = self.parse_citations(answer, relevant_chunks)
 
         # 6. 保存会话和消息
         if conversation_id is None:
@@ -134,6 +147,85 @@ class RAGService:
             "conversation_id": conversation_id,
             "sources": ai_msg.sources,
         }
+
+    def _is_library_query(self, question: str) -> bool:
+        """判断是否为「查询文献库」类问题（询问库里有没有某方向/某类文献）"""
+        q = question.strip()
+        library_patterns = [
+            r'(有没有|有无|是否有|有哪些|列出|查找|找找|搜索|搜一下).{0,20}(文献|论文|paper|文章)',
+            r'(文献|论文|paper|文章).{0,10}(有没有|有无|是否有|有哪些|列出)',
+            r'(库里|知识库|文献库|上传).{0,15}(有|包含|收录)',
+            r'(哪些|什么).{0,10}(方向|领域|主题|关于).{0,10}(文献|论文)',
+        ]
+        for pattern in library_patterns:
+            if re.search(pattern, q):
+                return True
+        return False
+
+    def _answer_library_query(self, question: str, user_id: int,
+                              doc_ids: Optional[List[int]] = None):
+        """
+        文献库查询：从数据库中取出用户真实上传的文献列表，
+        交给 LLM 做自然语言过滤/匹配，确保只返回真实存在的文献。
+        返回 (answer_text, sources_list)
+        """
+        query = Document.query.filter_by(user_id=user_id, status="ready")
+        if doc_ids:
+            query = query.filter(Document.id.in_(doc_ids))
+        documents = query.order_by(Document.upload_time.desc()).all()
+
+        if not documents:
+            return "您的文献库目前还没有上传任何文献。请前往「文献管理」页面上传 PDF 文件。", []
+
+        # 构建真实文献列表（只含数据库中真实存在的文献）
+        doc_list_text = ""
+        for i, doc in enumerate(documents, 1):
+            authors = doc.authors or "作者未知"
+            abstract_preview = (doc.abstract or "")[:100]
+            doc_list_text += f"[{i}] 标题：{doc.title}\n    作者：{authors}\n    摘要摘录：{abstract_preview}\n\n"
+
+        prompt = f"""以下是用户文献库中真实存在的所有文献（共 {len(documents)} 篇）：
+
+{doc_list_text}
+
+用户问题：{question}
+
+请根据上方文献列表回答用户，用自然语言组织回答。要求：
+1. 开头先直接回答有无相关文献，例如"有，以下是xxx方向的文献："或"当前文献库中暂无该方向的文献"
+2. 如果有相关文献，逐条列出，每条格式为：[序号] 文献标题（作者）
+3. 只能从上方列表中选取，绝对不能提及列表之外的任何文献
+4. 不要补充任何列表外的文献信息
+"""
+        answer = self.llm_client.generate(
+            prompt,
+            system_prompt="你是文献库查询助手，只能返回用户提供的真实文献列表中的内容，不得添加任何额外信息。",
+            temperature=0.1,
+        )
+
+        # 确保每个 [N] 条目前有换行，避免 LLM 输出粘连
+        answer = re.sub(r'\n*(\[\d+\])', r'\n\n\1', answer)
+
+        # 解析答案中引用的 [N] 编号，提取对应文献作为来源
+        cited_indices = set()
+        for m in re.findall(r"\[(\d+)\]", answer):
+            idx = int(m) - 1
+            if 0 <= idx < len(documents):
+                cited_indices.add(idx)
+
+        sources = [
+            {
+                "document_id": documents[i].id,
+                "title": documents[i].title,
+                "authors": documents[i].authors or "",
+                "chunk_index": 0,
+                "page_number": 0,
+                "content": documents[i].abstract or "",
+                "score": 1.0,
+            }
+            for i in sorted(cited_indices)
+        ]
+
+        return answer, sources
 
     def _is_casual_query(self, question: str) -> bool:
         """判断是否为闲聊/问候/通用问题（非需要文献检索的专业问题）"""
@@ -187,20 +279,21 @@ class RAGService:
             score = chunk.get("score", 0)
             chunks_text += f"\n[{i}] 来源：{title}（第{page}页，相似度：{score}）\n{content}\n"
 
-        prompt = f"""请根据以下检索到的文献片段回答用户问题。
+        prompt = f"""你是一个严格基于文献库的问答系统。你只能使用下面提供的文献片段回答问题，不得使用任何其他来源的知识。
 
-## 检索到的文献片段
+## 文献库片段（这是你唯一可以使用的信息来源）
 {chunks_text}
 
 ## 用户问题
 {question}
 
-## 回答要求
-- 基于上述文献内容进行回答，不要凭空捏造
-- 在答案中使用 [数字] 标注引用来源，如"锂离子电池的SEI膜主要由...组成[1][3]"
-- 如果检索到的文献与问题相关性较低，诚实说明现有文献的局限，并建议用户上传更针对性的文献或换个角度提问
-- 使用中文回答，专业术语保留英文
-- 回答要准确、简洁、有条理，语气专业但友好
+## 严格规则（必须遵守）
+1. 只能引用上方文献片段中明确出现的内容，禁止使用你自身训练数据中的知识
+2. 禁止提及任何未在上述片段中出现的文献、作者、研究结论或数据
+3. 若上方片段不足以完整回答问题，必须明确说明："根据当前文献库，没有找到关于...的相关内容，建议上传相关文献"
+4. 引用时使用 [数字] 标注来源编号，如"...组成[1][3]"
+5. 不得推断、补充或扩展片段未提到的内容
+6. 使用中文回答，专业术语保留英文
 """
         return prompt
 

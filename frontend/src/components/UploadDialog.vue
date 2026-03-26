@@ -112,3 +112,24 @@ const resetForm = () => {
   uploadRef.value?.clearFiles()
 }
 </script>
+
+<style scoped>
+:deep(.el-upload-dragger) {
+  width: 100%;
+}
+
+:deep(.el-upload) {
+  width: 100%;
+}
+
+:deep(.el-upload-list) {
+  max-width: 100%;
+}
+
+:deep(.el-upload-list__item-name) {
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+</style>
