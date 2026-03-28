@@ -110,8 +110,10 @@
             <p>{{ detailDoc.abstract }}</p>
           </div>
 
-          <el-button type="primary" style="margin-top: 16px; width: 100%" @click="openPreview(detailDoc)" :disabled="detailDoc.status !== 'ready'">📄 浏览原文</el-button>
-          <el-button style="margin-top: 8px; width: 100%" @click="startEditing">✏️ 编辑信息</el-button>
+          <div style="display: flex; gap: 8px; margin-top: 16px">
+            <el-button type="primary" style="flex: 1" @click="openPreview(detailDoc)" :disabled="detailDoc.status !== 'ready'">📄 浏览原文</el-button>
+            <el-button style="flex: 1" @click="startEditing">✏️ 编辑信息</el-button>
+          </div>
 
           <tool-panel :document="detailDoc" class="tool-section" />
         </div>

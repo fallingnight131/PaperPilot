@@ -280,9 +280,11 @@ class PDFParser:
             if abstract_match:
                 metadata["abstract"] = abstract_match.group(1).strip()[:2000]
 
-            chinese_chars = len(re.findall(r"[\u4e00-\u9fff]", first_page_text))
-            total_chars = len(first_page_text)
-            if total_chars > 0 and chinese_chars / total_chars > 0.3:
+            # 用前两页合并文本判断语言，避免首页英文摘要干扰
+            lang_sample = search_text  # search_text 已是前两页合并
+            chinese_chars = len(re.findall(r"[\u4e00-\u9fff]", lang_sample))
+            total_chars = len(lang_sample)
+            if total_chars > 0 and chinese_chars / total_chars > 0.15:
                 metadata["language"] = "zh"
             else:
                 metadata["language"] = "en"
