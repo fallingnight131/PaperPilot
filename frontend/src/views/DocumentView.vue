@@ -30,7 +30,7 @@
     <el-main class="main-content">
       <!-- 工具栏 -->
       <div class="toolbar">
-        <el-input v-model="searchKeyword" placeholder="搜索文献标题/作者" prefix-icon="Search" clearable style="width: 300px" @input="handleSearch" />
+        <el-input v-model="searchKeyword" placeholder="搜索标题 / 作者 / DOI" prefix-icon="Search" clearable style="width: 300px" @input="handleSearch" />
         <div class="toolbar-right">
           <el-radio-group v-model="viewMode" size="small">
             <el-radio-button value="card"><el-icon><Grid /></el-icon></el-radio-button>

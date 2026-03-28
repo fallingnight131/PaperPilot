@@ -83,7 +83,7 @@
         <div class="search-bar">
           <el-input
             v-model="searchKeyword"
-            placeholder="输入文献标题、作者关键词..."
+            placeholder="输入文献标题、作者、DOI..."
             size="large"
             clearable
             @keyup.enter="doSearch"

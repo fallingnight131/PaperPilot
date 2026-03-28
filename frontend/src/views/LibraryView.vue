@@ -33,14 +33,24 @@
           <h3>文献库</h3>
           <span class="total-tip">共 {{ total }} 篇已就绪文献</span>
         </div>
-        <el-input
-          v-model="searchKeyword"
-          placeholder="搜索标题 / 作者"
-          prefix-icon="Search"
-          clearable
-          style="width: 300px"
-          @input="handleSearch"
-        />
+        <div class="search-group">
+          <el-input
+            v-model="searchKeyword"
+            placeholder="标题 / 作者 / DOI"
+            prefix-icon="Search"
+            clearable
+            style="width: 240px"
+            @input="handleSearch"
+          />
+          <el-input
+            v-model="uploaderKeyword"
+            placeholder="上传者"
+            prefix-icon="User"
+            clearable
+            style="width: 150px"
+            @input="handleSearch"
+          />
+        </div>
       </div>
 
       <el-table :data="documents" stripe style="width: 100%" v-loading="loading">
@@ -99,6 +109,7 @@ const total = ref(0)
 const currentPage = ref(1)
 const pageSize = ref(20)
 const searchKeyword = ref('')
+const uploaderKeyword = ref('')
 const loading = ref(false)
 const showPdfViewer = ref(false)
 const previewDocId = ref(null)
@@ -118,6 +129,7 @@ const fetchLibrary = async () => {
       page: currentPage.value,
       per_page: pageSize.value,
       search: searchKeyword.value,
+      uploader: uploaderKeyword.value,
     })
     documents.value = data.documents || []
     total.value = data.total || 0
@@ -203,6 +215,11 @@ onMounted(fetchLibrary)
 .total-tip {
   font-size: 13px;
   color: #909399;
+}
+
+.search-group {
+  display: flex;
+  gap: 8px;
 }
 
 .pagination {

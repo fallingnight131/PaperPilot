@@ -10,6 +10,7 @@ from werkzeug.utils import secure_filename
 from ..extensions import db
 from ..models.document import Document
 from ..models.chunk import DocumentChunk
+from ..models.user import User
 from ..services.pdf_parser import PDFParser
 from ..services.doubao_client import DoubaoClient
 from ..services.vector_store import VectorStoreService
@@ -191,6 +192,7 @@ def list_documents():
             db.or_(
                 Document.title.ilike(search_pattern),
                 Document.authors.ilike(search_pattern),
+                Document.doi.ilike(search_pattern),
             )
         )
 
@@ -306,6 +308,7 @@ def list_library():
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 20, type=int)
     search = request.args.get("search", "").strip()
+    uploader = request.args.get("uploader", "").strip()
 
     query = Document.query.filter_by(status="ready")
 
@@ -315,7 +318,13 @@ def list_library():
             db.or_(
                 Document.title.ilike(search_pattern),
                 Document.authors.ilike(search_pattern),
+                Document.doi.ilike(search_pattern),
             )
+        )
+
+    if uploader:
+        query = query.join(User, Document.user_id == User.id).filter(
+            User.username.ilike(f"%{uploader}%")
         )
 
     query = query.order_by(Document.upload_time.desc())
