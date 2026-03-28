@@ -1,3 +1,5 @@
+import base64
+import json as _json
 import os
 import re
 from typing import List, Optional
@@ -94,6 +96,52 @@ class PDFParser:
                     return {"title": title, "authors": authors}
         except Exception as e:
             print(f"[PDFParser] CrossRef 查询失败 (doi={doi}): {e}")
+        return {}
+
+    def _extract_metadata_by_vision(self, file_path: str) -> dict:
+        """
+        将首页渲染为图片，调用视觉大模型提取标题、作者、DOI。
+        仅在 ARK_VISION_MODEL 已配置时生效；出错时静默返回空字典。
+        """
+        from ..config import Config
+        from openai import OpenAI
+        vision_model = Config.ARK_VISION_MODEL
+        if not vision_model or not Config.ARK_API_KEY:
+            return {}
+        try:
+            doc = fitz.open(file_path)
+            pix = doc[0].get_pixmap(matrix=fitz.Matrix(2, 2), colorspace=fitz.csRGB)
+            doc.close()
+            b64 = base64.b64encode(pix.tobytes("png")).decode()
+
+            client = OpenAI(api_key=Config.ARK_API_KEY, base_url=Config.ARK_BASE_URL)
+            resp = client.chat.completions.create(
+                model=vision_model,
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url",
+                         "image_url": {"url": f"data:image/png;base64,{b64}"}},
+                        {"type": "text",
+                         "text": (
+                             "请从这篇学术论文首页图片中提取以下信息。"
+                             "作者字段请列出所有作者，用分号分隔。"
+                             "找不到的字段留空字符串。"
+                             "只返回 JSON，不要有任何其他文字：\n"
+                             '{"title": "论文完整标题", "authors": "作者1; 作者2", "doi": "DOI号"}'
+                         )},
+                    ],
+                }],
+                temperature=0,
+                max_tokens=512,
+            )
+            text = resp.choices[0].message.content.strip()
+            m = re.search(r'\{.*\}', text, re.DOTALL)
+            if m:
+                data = _json.loads(m.group())
+                return {k: str(data.get(k, "")).strip() for k in ("title", "authors", "doi")}
+        except Exception as e:
+            print(f"[PDFParser] 视觉模型提取元数据失败: {e}")
         return {}
 
     # ── 内部：OCR 单页 ─────────────────────────────────────────────────────────
@@ -238,6 +286,34 @@ class PDFParser:
                 metadata["language"] = "zh"
             else:
                 metadata["language"] = "en"
+
+            # ── 作者为空时，从正文文本中二次提取 ────────────────────────────
+            if not metadata["authors"]:
+                # 策略1：英文罗马拼音作者行（含全部作者），如 "PENG Jiayue, ZU Chenxi, LI Hong"
+                en_author_m = re.search(
+                    r'^([A-Z]{2,}\s+[A-Za-z]+(?:[,，]\s*[A-Z]{2,}\s+[A-Za-z]+)+)\s*$',
+                    search_text,
+                    re.MULTILINE,
+                )
+                if en_author_m:
+                    metadata["authors"] = en_author_m.group(1).strip()
+
+            if not metadata["authors"]:
+                # 策略2：脚注 "第一作者: 姓名" 格式（仅第一作者，最后兜底）
+                footnote_m = re.search(r'第[一]?作者[：:]\s*([\u4e00-\u9fff]{2,5})', search_text)
+                if footnote_m:
+                    metadata["authors"] = footnote_m.group(1)
+
+            # ── 仍为空时用视觉模型兜底（需配置 ARK_VISION_MODEL）────────────
+            if not metadata["authors"] or not metadata["title"]:
+                print("[PDFParser] 作者/标题未能识别，尝试视觉模型提取 …")
+                vision = self._extract_metadata_by_vision(file_path)
+                if vision.get("title") and not metadata["title"]:
+                    metadata["title"] = vision["title"]
+                if vision.get("authors"):
+                    metadata["authors"] = vision["authors"]
+                if vision.get("doi") and not metadata["doi"]:
+                    metadata["doi"] = vision["doi"]
 
         except Exception as e:
             print(f"[PDFParser] 提取元数据失败: {e}")
