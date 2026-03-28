@@ -45,6 +45,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { marked } from 'marked'
+import katex from 'katex'
 
 const props = defineProps({
   message: {
@@ -85,17 +86,40 @@ const handlePreviewSource = (source) => {
   }
 }
 
-// Markdown 渲染，并高亮引用编号 [1] [2] 等
+// Markdown + KaTeX 渲染
 const renderedContent = computed(() => {
   if (!props.message.content) return ''
 
-  let html = marked.parse(props.message.content)
+  const blocks = [] // { math, display }
 
-  // 高亮引用标记 [数字]
-  html = html.replace(
-    /\[(\d+)\]/g,
-    '<span class="citation-mark">[$1]</span>'
-  )
+  // Step 1：先把数学公式替换成占位符，防止 marked 把 _ 解析成斜体
+  let text = props.message.content
+    // 行间公式 $$...$$
+    .replace(/\$\$([\s\S]+?)\$\$/g, (_, math) => {
+      blocks.push({ math: math.trim(), display: true })
+      return `@@MATH_${blocks.length - 1}@@`
+    })
+    // 行内公式 $...$（单行，长度限制避免误匹配）
+    .replace(/\$([^\n$]{1,400}?)\$/g, (_, math) => {
+      blocks.push({ math: math.trim(), display: false })
+      return `@@MATH_${blocks.length - 1}@@`
+    })
+
+  // Step 2：marked 处理 Markdown
+  let html = marked.parse(text)
+
+  // Step 3：把占位符还原为 KaTeX 渲染结果
+  html = html.replace(/@@MATH_(\d+)@@/g, (_, i) => {
+    const { math, display } = blocks[Number(i)]
+    try {
+      return katex.renderToString(math, { displayMode: display, throwOnError: false })
+    } catch {
+      return display ? `$$${math}$$` : `$${math}$`
+    }
+  })
+
+  // Step 4：高亮引用标记 [数字]
+  html = html.replace(/\[(\d+)\]/g, '<span class="citation-mark">[$1]</span>')
 
   return html
 })
