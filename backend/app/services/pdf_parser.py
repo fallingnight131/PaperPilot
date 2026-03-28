@@ -3,6 +3,7 @@ import re
 from typing import List, Optional
 
 import fitz  # PyMuPDF
+import httpx
 
 # OCR 依赖（可选），仅在扫描版 PDF 时使用
 try:
@@ -18,9 +19,82 @@ _SCANNED_PAGE_THRESHOLD = 50
 # OCR 渲染 DPI（越高越准，越慢）
 _OCR_DPI = 200
 
+# DOI 正则：匹配 10.XXXX/... 格式
+_DOI_PATTERN = re.compile(r'\b(10\.\d{4,9}/[^\s\]><,;\'"\u201c\u201d\uff09\uff08]+)', re.IGNORECASE)
+
 
 class PDFParser:
     """PDF 解析与分块服务，支持文本版和扫描版 PDF"""
+
+    # ── 内部：DOI 提取与 CrossRef 查询 ────────────────────────────────────────
+
+    def _extract_doi(self, text: str, pdf_meta: dict) -> str:
+        """从文本或 PDF 元数据中提取 DOI。"""
+        # 先尝试 PDF 元数据中的 doi / subject 字段
+        for key in ("doi", "subject", "keywords"):
+            val = pdf_meta.get(key, "") or ""
+            m = _DOI_PATTERN.search(val)
+            if m:
+                return m.group(1).rstrip(".")
+        # 再在文本中搜索
+        m = _DOI_PATTERN.search(text)
+        if m:
+            return m.group(1).rstrip(".")
+        return ""
+
+    def _sanitize_pdf_meta(self, title: str, authors: str) -> tuple[str, str]:
+        """
+        过滤 PDF 内置元数据中明显无效的标题和作者。
+        常见污染来源：Word/WPS 导出时写入的窗口标题和系统用户名。
+        返回 (cleaned_title, cleaned_authors)。
+        """
+        # ── 无效标题模式 ─────────────────────────────────────────────────────
+        _INVALID_TITLE_PATTERNS = re.compile(
+            r'Microsoft\s+(Word|Office|Excel|PowerPoint)'  # Word 窗口标题
+            r'|WPS\s+(Writer|Office)'                      # WPS 窗口标题
+            r'|\.(doc|docx|xls|xlsx|ppt|pptx|wps|odt|rtf)$'  # 以文档扩展名结尾
+            r'|^(Untitled|无标题|新建文档|document\d*|slide\d*)$',  # 通用占位名
+            re.IGNORECASE,
+        )
+        # ── 无效作者模式（单个系统用户名）────────────────────────────────────
+        _INVALID_AUTHOR_PATTERNS = re.compile(
+            r'^(new|user|admin|administrator|owner|default|guest'
+            r'|unknown|author|pc|desktop|laptop|computer|\d+)$',
+            re.IGNORECASE,
+        )
+
+        clean_title = title.strip()
+        if _INVALID_TITLE_PATTERNS.search(clean_title):
+            clean_title = ""
+
+        clean_authors = authors.strip()
+        if _INVALID_AUTHOR_PATTERNS.match(clean_authors):
+            clean_authors = ""
+
+        return clean_title, clean_authors
+
+    def _query_crossref(self, doi: str) -> dict:
+        """通过 CrossRef API 查询 DOI，返回标准化的 title 和 authors。"""
+        try:
+            url = f"https://api.crossref.org/works/{doi}"
+            # trust_env=False：忽略系统代理，避免 SOCKS 代理依赖问题
+            resp = httpx.get(url, timeout=8.0, trust_env=False,
+                             headers={"User-Agent": "PaperPilot/1.0 (mailto:support@paperpilot.app)"})
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("status") == "ok":
+                    msg = data["message"]
+                    title = (msg.get("title") or [""])[0]
+                    authors_list = msg.get("author") or []
+                    authors = "; ".join(
+                        f"{a.get('given', '')} {a.get('family', '')}".strip()
+                        for a in authors_list
+                        if a.get("family") or a.get("given")
+                    )
+                    return {"title": title, "authors": authors}
+        except Exception as e:
+            print(f"[PDFParser] CrossRef 查询失败 (doi={doi}): {e}")
+        return {}
 
     # ── 内部：OCR 单页 ─────────────────────────────────────────────────────────
 
@@ -83,6 +157,7 @@ class PDFParser:
         metadata = {
             "title": "",
             "authors": "",
+            "doi": "",
             "page_count": 0,
             "language": "unknown",
             "abstract": "",
@@ -92,22 +167,62 @@ class PDFParser:
             doc = fitz.open(file_path)
             metadata["page_count"] = len(doc)
 
-            pdf_meta = doc.metadata
-            if pdf_meta:
-                metadata["title"] = pdf_meta.get("title", "") or ""
-                metadata["authors"] = pdf_meta.get("author", "") or ""
+            pdf_meta = doc.metadata or {}
+            raw_title = pdf_meta.get("title", "") or ""
+            raw_authors = pdf_meta.get("author", "") or ""
             doc.close()
 
-            # 用统一提取（含 OCR 回退）获取首页文本
+            metadata["title"], metadata["authors"] = self._sanitize_pdf_meta(raw_title, raw_authors)
+
+            # 用统一提取（含 OCR 回退）获取首页文本（前两页）
             pages = self._extract_pages(file_path)
             first_page_text = pages[0][1] if pages else ""
+            second_page_text = pages[1][1] if len(pages) > 1 else ""
+            search_text = first_page_text + "\n" + second_page_text
 
+            # ── 提取 DOI ──────────────────────────────────────────────────────
+            doi = self._extract_doi(search_text, pdf_meta)
+            metadata["doi"] = doi
+
+            # ── 有 DOI 则通过 CrossRef 获取规范标题和完整作者 ─────────────────
+            if doi:
+                print(f"[PDFParser] 发现 DOI: {doi}，正在查询 CrossRef …")
+                crossref = self._query_crossref(doi)
+                if crossref.get("title"):
+                    metadata["title"] = crossref["title"]
+                if crossref.get("authors"):
+                    metadata["authors"] = crossref["authors"]
+
+            # ── 无法从 CrossRef 获取时的兜底提取 ─────────────────────────────
             if not metadata["title"]:
-                lines = [l.strip() for l in first_page_text.split("\n") if l.strip()]
-                for line in lines[:5]:
-                    if len(line) > 10:
+                raw_lines = first_page_text.split("\n")
+                # 跳过期刊元数据行：卷号/期号/年份/纯英文期刊名/作者序等
+                _SKIP_LINE = re.compile(
+                    r'Vol\.?\s*\d|No\.?\s*\d'       # Vol/No 行
+                    r'|\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b'  # 月份
+                    r'|^\d{4}\s*年'                 # 以年份开头
+                    r'|第\s*\d+\s*[卷期]'           # 中文卷期
+                    r'|^[A-Za-z][A-Za-z\s,\.\-:&]+$'  # 纯英文行（期刊英文名）
+                    r'|^(作者序|前言|序言|摘\s*要|Abstract)$',
+                    re.IGNORECASE,
+                )
+                n = len(raw_lines)
+                # 第一遍：优先选"前后均为空行的孤立行"（论文标题的典型排版特征）
+                for i in range(min(n, 40)):
+                    line = raw_lines[i].strip()
+                    if len(line) <= 5 or _SKIP_LINE.search(line):
+                        continue
+                    prev_blank = (i == 0 or not raw_lines[i - 1].strip())
+                    next_blank = (i + 1 >= n or not raw_lines[i + 1].strip())
+                    if prev_blank and next_blank:
                         metadata["title"] = line[:200]
                         break
+                # 第二遍：兜底——取前20行中第一个长度>5且不被跳过的行
+                if not metadata["title"]:
+                    for line in [l.strip() for l in raw_lines[:20] if l.strip()]:
+                        if len(line) > 5 and not _SKIP_LINE.search(line):
+                            metadata["title"] = line[:200]
+                            break
 
             abstract_match = re.search(
                 r"(?:Abstract|摘\s*要)[:\s]*\n?(.*?)(?:\n\s*(?:Keywords|关键词|Introduction|1\s|1\.))",

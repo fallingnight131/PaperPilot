@@ -90,6 +90,9 @@
       <template v-if="detailDoc">
         <el-descriptions :column="1" border>
           <el-descriptions-item label="作者">{{ detailDoc.authors || '未知' }}</el-descriptions-item>
+          <el-descriptions-item label="DOI" v-if="detailDoc.doi">
+            <a :href="`https://doi.org/${detailDoc.doi}`" target="_blank" rel="noopener">{{ detailDoc.doi }}</a>
+          </el-descriptions-item>
           <el-descriptions-item label="语言">{{ detailDoc.language }}</el-descriptions-item>
           <el-descriptions-item label="状态">
             <el-tag :type="statusType(detailDoc.status)">{{ statusText(detailDoc.status) }}</el-tag>
@@ -221,6 +224,8 @@ const startPolling = (docId) => {
       if (data.status === 'ready' || data.status === 'failed') {
         clearInterval(pollingTimers.value[docId])
         delete pollingTimers.value[docId]
+        // 重新拉取列表，刷新标题、作者、DOI 等提取结果
+        fetchDocuments()
         if (data.status === 'ready') {
           ElMessage.success(`文献处理完成，共 ${data.chunk_count} 个分块`)
         } else {
@@ -235,7 +240,7 @@ const startPolling = (docId) => {
   pollingTimers.value[docId] = timer
 }
 
-const onUploaded = (docId) => {
+const onUploaded = () => {
   showUploadDialog.value = false
   fetchDocuments()
 }

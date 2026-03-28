@@ -10,6 +10,7 @@ class Document(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
     title = db.Column(db.String(500), nullable=False, default="未命名文献")
     authors = db.Column(db.String(1000), default="")
+    doi = db.Column(db.String(255), default="")
     abstract = db.Column(db.Text, default="")
     filename = db.Column(db.String(255), nullable=False)
     file_path = db.Column(db.String(500), nullable=False)
@@ -29,6 +30,7 @@ class Document(db.Model):
             "user_id": self.user_id,
             "title": self.title,
             "authors": self.authors,
+            "doi": self.doi,
             "abstract": self.abstract,
             "filename": self.filename,
             "file_size": self.file_size,

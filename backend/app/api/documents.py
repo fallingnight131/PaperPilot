@@ -49,10 +49,13 @@ def process_document_async(app, document_id):
             metadata = parser.extract_metadata(doc.file_path)
 
             # 更新元数据
-            if metadata.get("title") and not doc.title:
+            # 标题：CrossRef/PDF提取优先，提取不到则保留上传时设置的文件名
+            if metadata.get("title"):
                 doc.title = metadata["title"]
-            if metadata.get("authors") and not doc.authors:
-                doc.authors = metadata["authors"]
+            # 作者：有则覆盖，提取不到则置空
+            doc.authors = metadata.get("authors") or ""
+            # DOI：直接写入
+            doc.doi = metadata.get("doi") or ""
             if metadata.get("abstract"):
                 doc.abstract = metadata["abstract"]
             if metadata.get("language"):

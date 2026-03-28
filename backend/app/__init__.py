@@ -45,5 +45,12 @@ def create_app(config_class=Config):
     with app.app_context():
         from . import models  # noqa: F401
         db.create_all()
+        # 迁移：为旧数据库补充 doi 字段
+        try:
+            with db.engine.connect() as conn:
+                conn.execute(db.text("ALTER TABLE documents ADD COLUMN doi VARCHAR(255) DEFAULT ''"))
+                conn.commit()
+        except Exception:
+            pass  # 字段已存在，忽略
 
     return app

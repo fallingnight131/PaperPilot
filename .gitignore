@@ -34,6 +34,7 @@ frontend/dist/
 *~
 .DS_Store
 Thumbs.db
+.claude/
 
 # ========== 日志 ==========
 *.log
