@@ -1,7 +1,7 @@
 import os
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flask import Blueprint, request, jsonify, current_app, send_file
 from flask_jwt_extended import jwt_required, get_jwt_identity
@@ -127,10 +127,11 @@ def upload_document():
         return error_response("仅支持 PDF 格式文件")
 
     try:
-        # 保存文件
-        original_filename = secure_filename(file.filename) or "document.pdf"
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        safe_filename = f"{timestamp}_{original_filename}"
+        # 保存文件：safe_filename 用于磁盘存储，raw_filename 用于展示
+        raw_filename = file.filename
+        safe_filename_part = secure_filename(raw_filename) or "document.pdf"
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        safe_filename = f"{timestamp}_{safe_filename_part}"
 
         upload_folder = current_app.config.get("UPLOAD_FOLDER", "./uploads")
         os.makedirs(upload_folder, exist_ok=True)
@@ -139,8 +140,9 @@ def upload_document():
 
         file_size = os.path.getsize(file_path)
 
-        # 获取用户提供的标题和作者
-        title = request.form.get("title", "").strip() or original_filename
+        # 获取用户提供的标题和作者，默认用原始文件名（含中文）去掉扩展名
+        display_name = os.path.splitext(raw_filename)[0] if raw_filename else "document"
+        title = request.form.get("title", "").strip() or display_name
         authors = request.form.get("authors", "").strip()
 
         # 创建 Document 记录
@@ -148,7 +150,7 @@ def upload_document():
             user_id=user_id,
             title=title,
             authors=authors,
-            filename=original_filename,
+            filename=raw_filename,
             file_path=file_path,
             file_size=file_size,
             status="pending",
