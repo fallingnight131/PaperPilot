@@ -86,8 +86,14 @@ export const documentAPI = {
   getList(params) {
     return request.get('/documents', { params })
   },
+  get(id) {
+    return request.get(`/documents/${id}`)
+  },
   getDetail(id) {
     return request.get(`/documents/${id}`)
+  },
+  update(id, data) {
+    return request.put(`/documents/${id}`, data)
   },
   delete(id) {
     return request.delete(`/documents/${id}`)

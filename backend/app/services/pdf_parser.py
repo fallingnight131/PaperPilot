@@ -296,7 +296,10 @@ class PDFParser:
                     re.MULTILINE,
                 )
                 if en_author_m:
-                    metadata["authors"] = en_author_m.group(1).strip()
+                    # 统一格式：将逗号替换为分号分隔
+                    authors_str = en_author_m.group(1).strip()
+                    authors_str = re.sub(r'[,，]\s*', '; ', authors_str)
+                    metadata["authors"] = authors_str
 
             if not metadata["authors"]:
                 # 策略2：脚注 "第一作者: 姓名" 格式（仅第一作者，最后兜底）

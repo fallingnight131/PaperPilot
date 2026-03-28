@@ -88,28 +88,58 @@
     <!-- 文献详情抽屉 -->
     <el-drawer v-model="showDetail" :title="detailDoc?.title" size="500px">
       <template v-if="detailDoc">
-        <el-descriptions :column="1" border>
-          <el-descriptions-item label="作者">{{ detailDoc.authors || '未知' }}</el-descriptions-item>
-          <el-descriptions-item label="DOI" v-if="detailDoc.doi">
-            <a :href="`https://doi.org/${detailDoc.doi}`" target="_blank" rel="noopener">{{ detailDoc.doi }}</a>
-          </el-descriptions-item>
-          <el-descriptions-item label="语言">{{ detailDoc.language }}</el-descriptions-item>
-          <el-descriptions-item label="状态">
-            <el-tag :type="statusType(detailDoc.status)">{{ statusText(detailDoc.status) }}</el-tag>
-          </el-descriptions-item>
-          <el-descriptions-item label="分块数">{{ detailDoc.chunk_count }}</el-descriptions-item>
-          <el-descriptions-item label="文件大小">{{ formatSize(detailDoc.file_size) }}</el-descriptions-item>
-          <el-descriptions-item label="上传时间">{{ formatDate(detailDoc.upload_time) }}</el-descriptions-item>
-        </el-descriptions>
+        <!-- 显示模式 -->
+        <div v-if="!isEditingDetail">
+          <el-descriptions :column="1" border>
+            <el-descriptions-item label="上传者">{{ detailDoc.uploader }}</el-descriptions-item>
+            <el-descriptions-item label="作者">{{ detailDoc.authors || '未知' }}</el-descriptions-item>
+            <el-descriptions-item label="DOI" v-if="detailDoc.doi">
+              <a :href="`https://doi.org/${detailDoc.doi}`" target="_blank" rel="noopener">{{ detailDoc.doi }}</a>
+            </el-descriptions-item>
+            <el-descriptions-item label="语言">{{ detailDoc.language }}</el-descriptions-item>
+            <el-descriptions-item label="状态">
+              <el-tag :type="statusType(detailDoc.status)">{{ statusText(detailDoc.status) }}</el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="分块数">{{ detailDoc.chunk_count }}</el-descriptions-item>
+            <el-descriptions-item label="文件大小">{{ formatSize(detailDoc.file_size) }}</el-descriptions-item>
+            <el-descriptions-item label="上传时间">{{ formatDate(detailDoc.upload_time) }}</el-descriptions-item>
+          </el-descriptions>
 
-        <div v-if="detailDoc.abstract" class="abstract-section">
-          <h4>摘要</h4>
-          <p>{{ detailDoc.abstract }}</p>
+          <div v-if="detailDoc.abstract" class="abstract-section">
+            <h4>摘要</h4>
+            <p>{{ detailDoc.abstract }}</p>
+          </div>
+
+          <el-button type="primary" style="margin-top: 16px; width: 100%" @click="openPreview(detailDoc)" :disabled="detailDoc.status !== 'ready'">📄 浏览原文</el-button>
+          <el-button style="margin-top: 8px; width: 100%" @click="startEditing">✏️ 编辑信息</el-button>
+
+          <tool-panel :document="detailDoc" class="tool-section" />
         </div>
 
-        <el-button type="primary" style="margin-top: 16px; width: 100%" @click="openPreview(detailDoc)" :disabled="detailDoc.status !== 'ready'">📄 浏览原文</el-button>
+        <!-- 编辑模式 -->
+        <div v-if="isEditingDetail">
+          <el-form :model="editingDoc" label-width="80px">
+            <el-form-item label="标题" required>
+              <el-input v-model="editingDoc.title" placeholder="论文标题" />
+            </el-form-item>
+            <el-form-item label="作者">
+              <el-input
+                v-model="editingDoc.authors"
+                type="textarea"
+                :rows="3"
+                placeholder="多个作者用分号分隔，例如: 作者1; 作者2; 作者3"
+              />
+            </el-form-item>
+            <el-form-item label="DOI">
+              <el-input v-model="editingDoc.doi" placeholder="例如: 10.1234/example" />
+            </el-form-item>
+          </el-form>
 
-        <tool-panel :document="detailDoc" class="tool-section" />
+          <div style="display: flex; gap: 8px; margin-top: 16px">
+            <el-button type="primary" @click="saveEditing" :loading="savingDetail">保存</el-button>
+            <el-button @click="cancelEditing">取消</el-button>
+          </div>
+        </div>
       </template>
     </el-drawer>
 
@@ -141,6 +171,9 @@ const viewMode = ref('card')
 const showUploadDialog = ref(false)
 const showDetail = ref(false)
 const detailDoc = ref(null)
+const isEditingDetail = ref(false)
+const editingDoc = ref(null)
+const savingDetail = ref(false)
 const showPdfViewer = ref(false)
 const previewDocId = ref(null)
 const previewDocTitle = ref('')
@@ -259,6 +292,46 @@ const openPreview = (doc) => {
 const handleSummarize = (doc) => {
   detailDoc.value = doc
   showDetail.value = true
+}
+
+const startEditing = () => {
+  editingDoc.value = {
+    title: detailDoc.value.title,
+    authors: detailDoc.value.authors,
+    doi: detailDoc.value.doi,
+  }
+  isEditingDetail.value = true
+}
+
+const cancelEditing = () => {
+  isEditingDetail.value = false
+  editingDoc.value = null
+}
+
+const saveEditing = async () => {
+  if (!editingDoc.value.title.trim()) {
+    ElMessage.error('标题不能为空')
+    return
+  }
+
+  savingDetail.value = true
+  try {
+    await documentAPI.update(detailDoc.value.id, {
+      title: editingDoc.value.title.trim(),
+      authors: editingDoc.value.authors.trim(),
+      doi: editingDoc.value.doi.trim(),
+    })
+    ElMessage.success('文献信息已更新')
+    isEditingDetail.value = false
+    // 刷新详情和列表
+    const updated = await documentAPI.get(detailDoc.value.id)
+    detailDoc.value = updated
+    fetchDocuments()
+  } catch (err) {
+    // 错误已在拦截器处理
+  } finally {
+    savingDetail.value = false
+  }
 }
 
 const handleDelete = async (doc) => {

@@ -216,6 +216,43 @@ def get_document(doc_id):
     return success_response(doc.to_dict())
 
 
+@documents_bp.route("/<int:doc_id>", methods=["PUT"])
+@jwt_required()
+def update_document(doc_id):
+    """更新文献信息（标题、作者、DOI）"""
+    user_id = int(get_jwt_identity())
+    doc = Document.query.filter_by(id=doc_id, user_id=user_id).first()
+    if not doc:
+        return error_response("文献不存在", status_code=404)
+
+    data = request.get_json() or {}
+
+    try:
+        # 仅允许更新这三个字段
+        if "title" in data:
+            title = data["title"].strip()
+            if not title:
+                return error_response("标题不能为空")
+            doc.title = title
+
+        if "authors" in data:
+            # 作者可以为空，格式：用分号分隔的 "Author1; Author2; Author3"
+            authors = data["authors"].strip()
+            doc.authors = authors
+
+        if "doi" in data:
+            # DOI 可以为空
+            doi = data["doi"].strip()
+            doc.doi = doi
+
+        db.session.commit()
+        return success_response(doc.to_dict(), "文献信息已更新")
+
+    except Exception as e:
+        db.session.rollback()
+        return error_response(f"更新失败: {str(e)}", status_code=500)
+
+
 @documents_bp.route("/<int:doc_id>", methods=["DELETE"])
 @jwt_required()
 def delete_document(doc_id):

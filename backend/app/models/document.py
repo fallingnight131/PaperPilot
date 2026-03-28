@@ -28,6 +28,7 @@ class Document(db.Model):
         return {
             "id": self.id,
             "user_id": self.user_id,
+            "uploader": self.user.username if self.user else "",
             "title": self.title,
             "authors": self.authors,
             "doi": self.doi,
