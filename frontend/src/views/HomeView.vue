@@ -12,6 +12,9 @@
         <el-menu-item index="/documents">
           <el-icon><Document /></el-icon>文献管理
         </el-menu-item>
+        <el-menu-item index="/library">
+          <el-icon><Collection /></el-icon>文献库
+        </el-menu-item>
         <el-menu-item index="/chat">
           <el-icon><ChatDotRound /></el-icon>智能问答
         </el-menu-item>

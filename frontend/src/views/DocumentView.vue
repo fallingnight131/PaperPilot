@@ -8,6 +8,7 @@
       <el-menu mode="horizontal" default-active="/documents" router class="nav-menu">
         <el-menu-item index="/home"><el-icon><HomeFilled /></el-icon>首页</el-menu-item>
         <el-menu-item index="/documents"><el-icon><Document /></el-icon>文献管理</el-menu-item>
+        <el-menu-item index="/library"><el-icon><Collection /></el-icon>文献库</el-menu-item>
         <el-menu-item index="/chat"><el-icon><ChatDotRound /></el-icon>智能问答</el-menu-item>
         <el-menu-item index="/history"><el-icon><Clock /></el-icon>会话历史</el-menu-item>
       </el-menu>

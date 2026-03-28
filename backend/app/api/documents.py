@@ -299,12 +299,41 @@ def get_document_status(doc_id):
     })
 
 
+@documents_bp.route("/library", methods=["GET"])
+@jwt_required()
+def list_library():
+    """获取所有用户的已就绪文献（文献库）"""
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 20, type=int)
+    search = request.args.get("search", "").strip()
+
+    query = Document.query.filter_by(status="ready")
+
+    if search:
+        search_pattern = f"%{search}%"
+        query = query.filter(
+            db.or_(
+                Document.title.ilike(search_pattern),
+                Document.authors.ilike(search_pattern),
+            )
+        )
+
+    query = query.order_by(Document.upload_time.desc())
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+
+    return success_response({
+        "documents": [doc.to_dict() for doc in pagination.items],
+        "total": pagination.total,
+        "page": page,
+        "per_page": per_page,
+    })
+
+
 @documents_bp.route("/<int:doc_id>/preview", methods=["GET"])
 @jwt_required(locations=["headers", "query_string"])
 def preview_document(doc_id):
-    """在线预览 PDF 文件，支持 header 或 ?token=xxx 传递 JWT"""
-    user_id = int(get_jwt_identity())
-    doc = Document.query.filter_by(id=doc_id, user_id=user_id).first()
+    """在线预览 PDF 文件，支持 header 或 ?token=xxx 传递 JWT。任意登录用户均可访问。"""
+    doc = Document.query.get(doc_id)
     if not doc:
         return error_response("文献不存在", status_code=404)
 

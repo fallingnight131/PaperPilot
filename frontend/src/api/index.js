@@ -86,6 +86,9 @@ export const documentAPI = {
   getList(params) {
     return request.get('/documents', { params })
   },
+  getLibrary(params) {
+    return request.get('/documents/library', { params })
+  },
   get(id) {
     return request.get(`/documents/${id}`)
   },
