@@ -69,10 +69,10 @@ class DoubaoClient:
         return self.get_embedding(text)
 
     def generate(self, prompt: str, system_prompt: Optional[str] = None,
-                 temperature: float = 0.3) -> str:
+                 temperature: float = 0.3, max_tokens: int = 4096) -> str:
         """
         调用豆包对话模型生成文本。
-        支持传入 system_prompt。
+        支持传入 system_prompt 和 max_tokens。
         """
         messages = []
         if system_prompt:
@@ -84,7 +84,7 @@ class DoubaoClient:
                 model=self._chat_model,
                 messages=messages,
                 temperature=temperature,
-                max_tokens=4096,
+                max_tokens=max_tokens,
             )
             return response.choices[0].message.content
         except Exception as e:

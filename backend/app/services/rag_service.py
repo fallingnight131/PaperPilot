@@ -66,10 +66,13 @@ class RAGService:
             answer, sources = self._answer_library_query(question, user_id, doc_ids)
             retrieved_chunks = []
         else:
-            # 1. 获取问题向量
-            query_embedding = self.llm_client.get_query_embedding(question)
+            # 1. 改写问题为检索友好的关键词（不改变原始问题用于回答）
+            search_query = self._rewrite_for_retrieval(question)
 
-            # 2. 向量检索
+            # 2. 获取检索词向量
+            query_embedding = self.llm_client.get_query_embedding(search_query)
+
+            # 3. 向量检索
             retrieved_chunks = self.vector_store.search(
                 query_embedding=query_embedding,
                 n_results=7,
@@ -100,7 +103,7 @@ class RAGService:
                     if any(p in answer for p in no_content_phrases):
                         sources = []
                     else:
-                        sources = self.parse_citations(answer, relevant_chunks)
+                        answer, sources = self.parse_citations(answer, relevant_chunks)
 
         # 6. 保存会话和消息
         if conversation_id is None:
@@ -231,6 +234,30 @@ class RAGService:
 
         return answer, sources
 
+    def _rewrite_for_retrieval(self, question: str) -> str:
+        """
+        将用户问题改写为语义更丰富的检索关键词，用于向量检索。
+        例："Capacity=nF/3.6M中的F是什么" → "Capacity nF/3.6M 法拉第常数 Faraday constant 容量公式 符号定义"
+        改写失败时静默返回原始问题，不影响主流程。
+        """
+        prompt = (
+            f'将下面这个问题改写为适合文献检索的关键词列表，要求：\n'
+            f'1. 提取核心概念，展开缩写和符号（如 F→法拉第常数 Faraday constant，n→转移电子数）\n'
+            f'2. 补充相关领域术语（中英文均可）\n'
+            f'3. 去掉"是什么""讲讲"等问句词\n'
+            f'4. 只输出关键词，用空格分隔，不超过 30 个词，不要任何解释\n\n'
+            f'问题：{question}'
+        )
+        try:
+            rewritten = self.llm_client.generate(prompt, temperature=0.0, max_tokens=80)
+            rewritten = rewritten.strip()
+            if rewritten:
+                print(f"[RAG] 查询改写: {question!r} → {rewritten!r}")
+                return rewritten
+        except Exception as e:
+            print(f"[RAG] 查询改写失败，使用原始问题: {e}")
+        return question
+
     def _is_casual_query(self, question: str) -> bool:
         """判断是否为闲聊/问候/通用问题（非需要文献检索的专业问题）"""
         q = question.strip().lower()
@@ -301,10 +328,11 @@ class RAGService:
 """
         return prompt
 
-    def parse_citations(self, answer: str, chunks: List[dict]) -> List[dict]:
+    def parse_citations(self, answer: str, chunks: List[dict]) -> tuple:
         """
-        解析答案中的 [1][2] 等引用标记，
-        将编号映射到对应的检索片段，构建 sources 列表。
+        解析答案中的 [1][2] 等引用标记，将编号映射到对应的检索片段。
+        同时把答案里的旧编号替换为来源列表中的新编号，保持两者一致。
+        返回 (rewritten_answer, sources_list)。
         """
         cited_indices = set()
         for m in re.findall(r"\[(\d+)\]", answer):
@@ -312,8 +340,19 @@ class RAGService:
             if 0 <= idx < len(chunks):
                 cited_indices.add(idx)
 
-        # 如果没有找到引用，返回所有检索结果
+        # 如果没有找到引用，返回所有检索结果，答案不变
         if not cited_indices:
-            return chunks
+            return answer, chunks
 
-        return [chunks[i] for i in sorted(cited_indices)]
+        sorted_indices = sorted(cited_indices)
+        sources = [chunks[i] for i in sorted_indices]
+
+        # 构建旧编号 → 新编号的映射（旧编号是 1-based prompt 编号）
+        remap = {old_idx + 1: new_idx + 1 for new_idx, old_idx in enumerate(sorted_indices)}
+
+        def _replace(m):
+            n = int(m.group(1))
+            return f'[{remap[n]}]' if n in remap else m.group(0)
+
+        rewritten_answer = re.sub(r'\[(\d+)\]', _replace, answer)
+        return rewritten_answer, sources
