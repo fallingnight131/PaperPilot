@@ -147,19 +147,151 @@ class PDFParser:
     # ── 内部：OCR 单页 ─────────────────────────────────────────────────────────
 
     def _ocr_page(self, page: fitz.Page) -> str:
-        """将一页渲染为图片后 OCR，返回识别文本。"""
+        """
+        将一页渲染为图片后 OCR，返回识别文本。
+        使用 image_to_data 获取词级坐标，按行分组后应用栏位检测，
+        处理双栏布局与单栏摘要混排的情况。
+        """
         if not _OCR_AVAILABLE:
             return ""
         try:
             mat = fitz.Matrix(_OCR_DPI / 72, _OCR_DPI / 72)
             pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
             img = Image.open(io.BytesIO(pix.tobytes("png")))
-            # chi_sim+eng 覆盖中英混排论文
-            text = pytesseract.image_to_string(img, lang="chi_sim+eng")
-            return text
+            img_width = img.width
+
+            data = pytesseract.image_to_data(
+                img,
+                lang="chi_sim+eng",
+                output_type=pytesseract.Output.DICT,
+            )
+
+            # 按 (block_num, par_num, line_num) 分组，还原每一行
+            lines: dict = {}
+            n = len(data["level"])
+            for i in range(n):
+                if data["level"][i] != 5:       # 只取词级（level=5）
+                    continue
+                conf = data["conf"][i]
+                if int(conf) < 0:               # 过滤无效识别
+                    continue
+                text = data["text"][i].strip()
+                if not text:
+                    continue
+
+                key = (data["block_num"][i], data["par_num"][i], data["line_num"][i])
+                left = data["left"][i]
+                top = data["top"][i]
+                right = left + data["width"][i]
+
+                if key not in lines:
+                    lines[key] = {"x0": left, "y0": top, "x1": right, "words": []}
+                else:
+                    lines[key]["x0"] = min(lines[key]["x0"], left)
+                    lines[key]["y0"] = min(lines[key]["y0"], top)
+                    lines[key]["x1"] = max(lines[key]["x1"], right)
+                lines[key]["words"].append(text)
+
+            if not lines:
+                return ""
+
+            # 构建行列表：(x0, y0, x1, text)
+            line_list = [
+                (v["x0"], v["y0"], v["x1"], "".join(v["words"]))
+                for v in lines.values()
+            ]
+
+            # 复用与原生文本相同的栏位检测逻辑（坐标换成像素）
+            mid_x = img_width / 2
+            tolerance = img_width * 0.03
+
+            full_blocks, left_col, right_col = [], [], []
+            for x0, y0, x1, text in line_list:
+                if x0 < mid_x - tolerance and x1 > mid_x + tolerance:
+                    full_blocks.append((y0, text))
+                elif x1 <= mid_x + tolerance:
+                    left_col.append((y0, text))
+                else:
+                    right_col.append((y0, text))
+
+            is_two_col = bool(left_col) and bool(right_col)
+            if is_two_col:
+                col_start_y = min(b[0] for b in left_col + right_col)
+                top_full = sorted(
+                    [(y0, t) for y0, t in full_blocks if y0 <= col_start_y],
+                    key=lambda b: b[0],
+                )
+                bottom_full = sorted(
+                    [(y0, t) for y0, t in full_blocks if y0 > col_start_y],
+                    key=lambda b: b[0],
+                )
+                ordered = (
+                    top_full
+                    + sorted(left_col, key=lambda b: b[0])
+                    + sorted(right_col, key=lambda b: b[0])
+                    + bottom_full
+                )
+            else:
+                ordered = sorted(full_blocks + left_col + right_col, key=lambda b: b[0])
+
+            return "\n".join(t for _, t in ordered)
+
         except Exception as e:
             print(f"[PDFParser] OCR 失败（第 {page.number + 1} 页）: {e}")
             return ""
+
+    def _extract_page_text(self, page: fitz.Page) -> str:
+        """
+        从单页提取文本，自动识别双栏布局。
+        以页面中线为界：跨越中线的块为全宽块，两侧各自的块为左/右栏。
+        顺序：顶部全宽块 → 左栏 → 右栏 → 底部全宽块。
+        """
+        blocks = page.get_text("blocks")
+        # blocks 格式：(x0, y0, x1, y1, text, block_no, block_type)
+        text_blocks = [
+            (b[0], b[1], b[2], b[4])
+            for b in blocks
+            if b[6] == 0 and b[4].strip()
+        ]
+        if not text_blocks:
+            return ""
+
+        page_width = page.rect.width
+        mid_x = page_width / 2
+        # 允许 3% 容差，避免恰好压线的块判断错误
+        tolerance = page_width * 0.03
+
+        full_blocks = []  # 全宽块（跨越中线）
+        left_col = []     # 左栏块
+        right_col = []    # 右栏块
+
+        for x0, y0, x1, text in text_blocks:
+            if x0 < mid_x - tolerance and x1 > mid_x + tolerance:
+                full_blocks.append((y0, text))
+            elif x1 <= mid_x + tolerance:
+                left_col.append((y0, text))
+            else:
+                right_col.append((y0, text))
+
+        is_two_col = bool(left_col) and bool(right_col)
+
+        if is_two_col:
+            col_start_y = min(b[0] for b in left_col + right_col)
+            top_full = sorted(
+                [(y0, t) for y0, t in full_blocks if y0 <= col_start_y],
+                key=lambda b: b[0],
+            )
+            bottom_full = sorted(
+                [(y0, t) for y0, t in full_blocks if y0 > col_start_y],
+                key=lambda b: b[0],
+            )
+            left_sorted = sorted(left_col, key=lambda b: b[0])
+            right_sorted = sorted(right_col, key=lambda b: b[0])
+            ordered = top_full + left_sorted + right_sorted + bottom_full
+        else:
+            ordered = sorted(full_blocks + left_col + right_col, key=lambda b: b[0])
+
+        return "\n".join(t for _, t in ordered)
 
     def _extract_pages(self, file_path: str) -> List[tuple]:
         """
@@ -181,7 +313,7 @@ class PDFParser:
 
         for page_num in range(len(doc)):
             page = doc[page_num]
-            text = page.get_text("text")
+            text = self._extract_page_text(page)
 
             if len(text.strip()) < _SCANNED_PAGE_THRESHOLD:
                 # 该页文本极少，尝试 OCR
