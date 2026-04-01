@@ -114,21 +114,27 @@ class DoubaoClient:
             print(f"[DoubaoClient] 流式生成错误: {e}")
             raise
 
-    def batch_embed(self, texts: List[str], batch_size: int = 20) -> List[List[float]]:
+    def batch_embed(self, texts: List[str], batch_size: int = 20,
+                    progress_callback=None) -> List[List[float]]:
         """
         批量获取 embedding。
         每批最多 batch_size 个文本，逐条调用多模态接口。
+        progress_callback(done, total) 在每批完成后调用。
         """
         all_embeddings = []
-        for i in range(0, len(texts), batch_size):
+        total = len(texts)
+        n_batches = (total + batch_size - 1) // batch_size
+        for batch_idx, i in enumerate(range(0, total, batch_size)):
             batch = texts[i: i + batch_size]
             processed = [t[:8000] if t and t.strip() else " " for t in batch]
             try:
                 embeddings = self._call_multimodal_embedding(processed)
                 all_embeddings.extend(embeddings)
             except Exception as e:
-                print(f"[DoubaoClient] 批量 Embedding 错误 (batch {i}): {e}")
+                print(f"[DoubaoClient] 批量 Embedding 错误 (batch {batch_idx}): {e}")
                 raise
-            if i + batch_size < len(texts):
+            if progress_callback:
+                progress_callback(batch_idx + 1, n_batches)
+            if i + batch_size < total:
                 time.sleep(0.3)
         return all_embeddings

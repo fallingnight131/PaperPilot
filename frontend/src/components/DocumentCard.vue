@@ -30,13 +30,14 @@
     </div>
 
     <!-- 处理中进度条 -->
-    <el-progress
-      v-if="document.status === 'processing'"
-      :percentage="50"
-      :indeterminate="true"
-      :stroke-width="3"
-      class="processing-bar"
-    />
+    <div v-if="document.status === 'processing' || document.status === 'pending'" class="processing-bar">
+      <el-progress
+        :percentage="document.progress || 0"
+        :stroke-width="3"
+        :show-text="false"
+      />
+      <div class="processing-step">{{ document.status_message || '等待处理…' }}</div>
+    </div>
   </el-card>
 </template>
 
@@ -114,5 +115,11 @@ const formatDate = (dateStr) => {
 
 .processing-bar {
   margin-top: 8px;
+}
+
+.processing-step {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 4px;
 }
 </style>

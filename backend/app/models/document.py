@@ -17,6 +17,8 @@ class Document(db.Model):
     file_size = db.Column(db.Integer, default=0)
     upload_time = db.Column(db.DateTime, default=datetime.utcnow)
     status = db.Column(db.String(20), default="pending", index=True)  # pending/processing/ready/failed
+    progress = db.Column(db.Integer, default=0)          # 0-100
+    status_message = db.Column(db.String(200), default="")  # 当前处理步骤描述
     chunk_count = db.Column(db.Integer, default=0)
     language = db.Column(db.String(20), default="unknown")
     error_message = db.Column(db.Text, default="")

@@ -257,6 +257,8 @@ const startPolling = (docId) => {
       if (idx !== -1) {
         documents.value[idx].status = data.status
         documents.value[idx].chunk_count = data.chunk_count
+        documents.value[idx].progress = data.progress || 0
+        documents.value[idx].status_message = data.status_message || ''
       }
       if (data.status === 'ready' || data.status === 'failed') {
         clearInterval(pollingTimers.value[docId])

@@ -47,12 +47,18 @@ def create_app(config_class=Config):
     with app.app_context():
         from . import models  # noqa: F401
         db.create_all()
-        # 迁移：为旧数据库补充 doi 字段
-        try:
-            with db.engine.connect() as conn:
-                conn.execute(db.text("ALTER TABLE documents ADD COLUMN doi VARCHAR(255) DEFAULT ''"))
-                conn.commit()
-        except Exception:
-            pass  # 字段已存在，忽略
+        # 迁移：为旧数据库补充新字段
+        migrations = [
+            "ALTER TABLE documents ADD COLUMN doi VARCHAR(255) DEFAULT ''",
+            "ALTER TABLE documents ADD COLUMN progress INTEGER DEFAULT 0",
+            "ALTER TABLE documents ADD COLUMN status_message VARCHAR(200) DEFAULT ''",
+        ]
+        with db.engine.connect() as conn:
+            for sql in migrations:
+                try:
+                    conn.execute(db.text(sql))
+                    conn.commit()
+                except Exception:
+                    pass  # 字段已存在，忽略
 
     return app
