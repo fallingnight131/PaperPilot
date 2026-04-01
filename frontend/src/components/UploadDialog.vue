@@ -30,11 +30,14 @@
             </template>
           </el-upload>
         </el-form-item>
+        <el-form-item label="DOI">
+          <el-input v-model="form.doi" placeholder="可选，如 10.1016/j.xxx.2024.01.001" />
+        </el-form-item>
         <el-form-item label="文献标题">
-          <el-input v-model="form.title" placeholder="可选，留空将自动从 PDF 中提取" />
+          <el-input v-model="form.title" placeholder="可选，留空将通过 DOI 自动获取" />
         </el-form-item>
         <el-form-item label="作者">
-          <el-input v-model="form.authors" placeholder="可选" />
+          <el-input v-model="form.authors" placeholder="可选，留空将通过 DOI 自动获取" />
         </el-form-item>
       </el-form>
     </div>
@@ -91,7 +94,7 @@ const visible = computed({
 const uploadRef = ref()
 const uploading = ref(false)
 const selectedFile = ref(null)
-const form = ref({ title: '', authors: '' })
+const form = ref({ title: '', authors: '', doi: '' })
 
 // 处理进度状态
 const processing = ref(false)
@@ -131,6 +134,7 @@ const handleUpload = async () => {
   try {
     const formData = new FormData()
     formData.append('file', selectedFile.value)
+    if (form.value.doi) formData.append('doi', form.value.doi.trim())
     if (form.value.title) formData.append('title', form.value.title)
     if (form.value.authors) formData.append('authors', form.value.authors)
 
@@ -192,7 +196,7 @@ const resetForm = () => {
   currentProgress.value = 0
   stepMessage.value = ''
   progressStatus.value = ''
-  form.value = { title: '', authors: '' }
+  form.value = { title: '', authors: '', doi: '' }
   selectedFile.value = null
   uploadRef.value?.clearFiles()
   visible.value = false

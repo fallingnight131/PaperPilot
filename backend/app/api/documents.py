@@ -58,16 +58,46 @@ def process_document_async(app, document_id):
 
             # 2. 解析元数据
             parser = PDFParser()
+
+            # 记录用户上传时填写的信息（优先级最高）
+            user_title = doc.title if doc.title != os.path.splitext(doc.filename)[0] else ""
+            user_authors = doc.authors
+            user_doi = doc.doi
+
+            # 从 PDF 中提取元数据（DOI、摘要、语言）
             metadata = parser.extract_metadata(doc.file_path)
 
-            if metadata.get("title"):
-                doc.title = metadata["title"]
-            doc.authors = metadata.get("authors") or ""
-            doc.doi = metadata.get("doi") or ""
+            # DOI：用户填写 > PDF 提取
+            doi = user_doi or metadata.get("doi") or ""
+            doc.doi = doi
+
             if metadata.get("abstract"):
                 doc.abstract = metadata["abstract"]
             if metadata.get("language"):
                 doc.language = metadata["language"]
+
+            # 若标题或作者缺失，通过 DOI 查询
+            need_title = not user_title
+            need_authors = not user_authors
+            doi_meta = {}
+            if doi and (need_title or need_authors):
+                doi_meta = parser._query_doi_metadata(doi)
+
+            # 标题：用户填写 > DOI 查询 > 文件名
+            if user_title:
+                doc.title = user_title
+            elif doi_meta.get("title"):
+                doc.title = doi_meta["title"]
+            # else: 保持上传时设置的文件名
+
+            # 作者：用户填写 > DOI 查询 > 未知
+            if user_authors:
+                doc.authors = user_authors
+            elif doi_meta.get("authors"):
+                doc.authors = doi_meta["authors"]
+            else:
+                doc.authors = "未知"
+
             _set_progress(doc, 20, "正在分析文本并分块…")
 
             # 3. 分块
@@ -165,16 +195,18 @@ def upload_document():
 
         file_size = os.path.getsize(file_path)
 
-        # 获取用户提供的标题和作者，默认用原始文件名（含中文）去掉扩展名
+        # 文件名去扩展名作为默认标题
         display_name = os.path.splitext(raw_filename)[0] if raw_filename else "document"
-        title = request.form.get("title", "").strip() or display_name
-        authors = request.form.get("authors", "").strip()
+        user_title = request.form.get("title", "").strip()
+        user_authors = request.form.get("authors", "").strip()
+        user_doi = request.form.get("doi", "").strip()
 
-        # 创建 Document 记录
+        # 创建 Document 记录（标题暂用文件名，处理时按优先级覆盖）
         doc = Document(
             user_id=user_id,
-            title=title,
-            authors=authors,
+            title=user_title or display_name,
+            authors=user_authors,
+            doi=user_doi,
             filename=raw_filename,
             file_path=file_path,
             file_size=file_size,
