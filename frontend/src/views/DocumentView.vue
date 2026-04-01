@@ -107,11 +107,6 @@
             <el-descriptions-item label="上传时间">{{ formatDate(detailDoc.upload_time) }}</el-descriptions-item>
           </el-descriptions>
 
-          <div v-if="detailDoc.abstract" class="abstract-section">
-            <h4>摘要</h4>
-            <p>{{ detailDoc.abstract }}</p>
-          </div>
-
           <div style="display: flex; gap: 8px; margin-top: 16px">
             <el-button type="primary" style="flex: 1" @click="openPreview(detailDoc)" :disabled="detailDoc.status !== 'ready'">📄 浏览原文</el-button>
             <el-button style="flex: 1" @click="startEditing">✏️ 编辑信息</el-button>
@@ -418,21 +413,6 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: center;
   margin-top: 24px;
-}
-
-.abstract-section {
-  margin-top: 20px;
-}
-
-.abstract-section h4 {
-  margin-bottom: 8px;
-  color: #303133;
-}
-
-.abstract-section p {
-  color: #606266;
-  line-height: 1.6;
-  font-size: 14px;
 }
 
 .tool-section {
