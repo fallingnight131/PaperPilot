@@ -328,7 +328,7 @@ class PDFParser:
     # ── 公开：解析并分块 ───────────────────────────────────────────────────────
 
     def parse_and_chunk(
-        self, file_path: str, chunk_size: int = 800, chunk_overlap: int = 100
+        self, file_path: str, chunk_size: int = 800, chunk_overlap: int = 250
     ) -> List[dict]:
         """
         提取 PDF 全文（扫描版自动 OCR）并按段落边界分块。
@@ -350,7 +350,7 @@ class PDFParser:
             if not all_text.strip():
                 return []
 
-            paragraphs = re.split(r"\n\s*\n|\n(?=[A-Z0-9])", all_text)
+            paragraphs = re.split(r"\n\s*\n|\n(?=[A-Z][a-z])", all_text)
             current_chunk = ""
             current_start = 0
             char_offset = 0
