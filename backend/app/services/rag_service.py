@@ -53,7 +53,10 @@ class RAGService:
         5. 解析引用编号
         6. 保存消息并返回结果
         """
-        # 0. 先判断问题类型
+        # 0. 加载最近对话历史（已存入 DB 的消息，不含本轮）
+        history = self._load_history(conversation_id, limit=2) if conversation_id else []
+
+        # 1. 先判断问题类型
         is_casual = self._is_casual_query(question)
         is_library_query = self._is_library_query(question)
 
@@ -66,13 +69,13 @@ class RAGService:
             answer, sources = self._answer_library_query(question, user_id, doc_ids)
             retrieved_chunks = []
         else:
-            # 1. 改写问题为检索友好的关键词（不改变原始问题用于回答）
-            search_query = self._rewrite_for_retrieval(question)
+            # 2. 改写问题为检索友好的关键词（带入历史，还原"上式""它"等指代词）
+            search_query = self._rewrite_for_retrieval(question, history)
 
-            # 2. 获取检索词向量
+            # 3. 获取检索词向量
             query_embedding = self.llm_client.get_query_embedding(search_query)
 
-            # 3. 向量检索
+            # 4. 向量检索
             retrieved_chunks = self.vector_store.search(
                 query_embedding=query_embedding,
                 n_results=7,
@@ -80,11 +83,10 @@ class RAGService:
             )
 
             if not retrieved_chunks:
-                # 专业问题但没有检索到文献 → 友好提示并给出建议
                 answer = self._generate_no_docs_reply(question)
                 sources = []
             else:
-                # 3. 过滤低相关度片段
+                # 5. 过滤低相关度片段
                 MIN_SCORE_THRESHOLD = 0.4
                 relevant_chunks = [c for c in retrieved_chunks if c.get("score", 0) >= MIN_SCORE_THRESHOLD]
 
@@ -92,13 +94,13 @@ class RAGService:
                     answer = self._generate_no_docs_reply(question)
                     sources = []
                 else:
-                    # 4. 构建 RAG Prompt
-                    rag_prompt = self.build_rag_prompt(question, relevant_chunks)
+                    # 6. 构建带历史的 RAG Prompt（历史只取最近 1 轮，控制 token）
+                    rag_prompt = self.build_rag_prompt(question, relevant_chunks, history[-2:])
 
-                    # 5. 调用豆包生成答案（temperature 调低以减少创造性发挥）
+                    # 7. 调用豆包生成答案
                     answer = self.llm_client.generate(rag_prompt, system_prompt=SYSTEM_PROMPT_RAG, temperature=0.1)
 
-                    # 6. 解析引用编号（若 LLM 明确表示未找到相关内容，不返回来源）
+                    # 8. 解析引用编号（若 LLM 明确表示未找到相关内容，不返回来源）
                     no_content_phrases = ["没有找到", "未找到", "没有相关", "暂无相关", "建议上传相关文献"]
                     if any(p in answer for p in no_content_phrases):
                         sources = []
@@ -154,6 +156,27 @@ class RAGService:
             "conversation_id": conversation_id,
             "sources": ai_msg.sources,
         }
+
+    def _load_history(self, conversation_id: int, limit: int = 2) -> List[dict]:
+        """
+        从数据库加载最近 limit 轮对话（1轮 = 1条 user + 1条 assistant）。
+        助手回答截断到 300 字，避免 prompt 过长。
+        返回按时间升序排列的消息列表：[{role, content}, ...]
+        """
+        messages = (
+            Message.query
+            .filter_by(conversation_id=conversation_id)
+            .order_by(Message.created_at.desc())
+            .limit(limit * 2)
+            .all()
+        )
+        result = []
+        for msg in reversed(messages):
+            content = msg.content or ""
+            if msg.role == "assistant":
+                content = content[:300] + ("..." if len(content) > 300 else "")
+            result.append({"role": msg.role, "content": content})
+        return result
 
     def _is_library_query(self, question: str) -> bool:
         """判断是否为「查询文献库」类问题（询问库里有没有某方向/某类文献）"""
@@ -234,20 +257,32 @@ class RAGService:
 
         return answer, sources
 
-    def _rewrite_for_retrieval(self, question: str) -> str:
+    def _rewrite_for_retrieval(self, question: str, history: List[dict] = None) -> str:
         """
         将用户问题改写为语义更丰富的检索关键词，用于向量检索。
-        例："Capacity=nF/3.6M中的F是什么" → "Capacity nF/3.6M 法拉第常数 Faraday constant 容量公式 符号定义"
+        若提供 history，会结合上下文还原指代词（"上式""它""这个公式"等）。
         改写失败时静默返回原始问题，不影响主流程。
         """
+        history_text = ""
+        if history:
+            lines = []
+            for msg in history:
+                role_label = "用户" if msg["role"] == "user" else "助手"
+                lines.append(f"{role_label}：{msg['content'][:200]}")
+            history_text = "\n".join(lines)
+
         prompt = (
             f'将下面这个问题改写为适合文献检索的关键词列表，要求：\n'
-            f'1. 提取核心概念，展开缩写和符号（如 F→法拉第常数 Faraday constant，n→转移电子数）\n'
-            f'2. 补充相关领域术语（中英文均可）\n'
-            f'3. 去掉"是什么""讲讲"等问句词\n'
-            f'4. 只输出关键词，用空格分隔，不超过 30 个词，不要任何解释\n\n'
-            f'问题：{question}'
+            f'1. 结合对话历史，将"上式""它""这个""该公式"等指代词还原为具体内容\n'
+            f'2. 提取核心概念，展开缩写和符号（如 F→法拉第常数 Faraday constant）\n'
+            f'3. 补充相关领域术语（中英文均可）\n'
+            f'4. 去掉"是什么""讲讲"等问句词\n'
+            f'5. 只输出关键词，用空格分隔，不超过 30 个词，不要任何解释\n'
         )
+        if history_text:
+            prompt += f'\n对话历史：\n{history_text}\n'
+        prompt += f'\n当前问题：{question}'
+
         try:
             rewritten = self.llm_client.generate(prompt, temperature=0.0, max_tokens=80)
             rewritten = rewritten.strip()
@@ -300,8 +335,9 @@ class RAGService:
 4. 保持简短友好（3-5句话）"""
         return self.llm_client.generate(prompt, system_prompt=SYSTEM_PROMPT_CASUAL)
 
-    def build_rag_prompt(self, question: str, retrieved_chunks: List[dict]) -> str:
-        """构建 RAG Prompt"""
+    def build_rag_prompt(self, question: str, retrieved_chunks: List[dict],
+                         history: List[dict] = None) -> str:
+        """构建 RAG Prompt，可选带入最近 1 轮对话历史"""
         chunks_text = ""
         for i, chunk in enumerate(retrieved_chunks, 1):
             title = chunk.get("title", "未知文献")
@@ -310,17 +346,24 @@ class RAGService:
             score = chunk.get("score", 0)
             chunks_text += f"\n[{i}] 来源：{title}（第{page}页，相似度：{score}）\n{content}\n"
 
+        history_section = ""
+        if history:
+            lines = []
+            for msg in history:
+                role_label = "用户" if msg["role"] == "user" else "助手"
+                lines.append(f"{role_label}：{msg['content']}")
+            history_section = "\n## 对话历史（仅供理解上下文，不作为引用来源）\n" + "\n".join(lines) + "\n"
+
         prompt = f"""你是一个严格基于文献库的问答系统。你只能使用下面提供的文献片段回答问题，不得使用任何其他来源的知识。
 
 ## 文献库片段（这是你唯一可以使用的信息来源）
-{chunks_text}
-
-## 用户问题
+{chunks_text}{history_section}
+## 用户当前问题
 {question}
 
 ## 严格规则（必须遵守）
 1. 只能引用上方文献片段中明确出现的内容，禁止使用你自身训练数据中的知识
-2. 禁止提及任何未在上述片段中出现的文献、作者、研究结论或数据
+2. 对话历史仅用于理解"上式""它"等指代词，不能作为引用来源
 3. 若上方片段不足以完整回答问题，必须明确说明："根据当前文献库，没有找到关于...的相关内容，建议上传相关文献"
 4. 引用时使用 [数字] 标注来源编号，如"...组成[1][3]"
 5. 不得推断、补充或扩展片段未提到的内容
