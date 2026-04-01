@@ -74,17 +74,6 @@
       </div>
 
       <!-- 图例 -->
-      <div v-if="hasData && !loading" class="legend-section">
-        <span class="legend-label">文献图例：</span>
-        <span
-          v-for="(name, idx) in legendItems"
-          :key="idx"
-          class="legend-item"
-        >
-          <span class="legend-dot" :style="{ background: COLORS[idx % COLORS.length] }" />
-          {{ name }}
-        </span>
-      </div>
     </el-main>
   </div>
 </template>
@@ -310,26 +299,6 @@ onBeforeUnmount(() => {
 .chart-container {
   width: 100%;
   height: 580px;
-}
-
-.legend-section {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
-  font-size: 13px;
-  color: #606266;
-  padding: 4px 0;
-}
-
-.legend-label {
-  color: #909399;
-}
-
-.legend-item {
-  display: flex;
-  align-items: center;
-  gap: 5px;
 }
 
 .legend-dot {
