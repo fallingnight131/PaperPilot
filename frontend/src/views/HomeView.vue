@@ -74,7 +74,7 @@
             <h3>知识库</h3>
             <p>向量空间可视化，探索文献语义分布与主题聚类</p>
             <div class="stats">
-              <el-statistic title="可用工具" :value="1" />
+              <el-statistic title="向量分块总数" :value="stats.chunkCount ?? 0" />
             </div>
           </el-card>
         </el-col>
@@ -155,7 +155,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
-import { documentAPI, chatAPI } from '../api'
+import { documentAPI, chatAPI, knowledgeAPI } from '../api'
 import PdfViewer from '../components/PdfViewer.vue'
 
 const router = useRouter()
@@ -237,13 +237,15 @@ const goChat = (doc) => {
 
 onMounted(async () => {
   try {
-    const [docsRes, chatsRes] = await Promise.all([
+    const [docsRes, chatsRes, knowledgeRes] = await Promise.all([
       documentAPI.getList({ page: 1, per_page: 1 }),
       chatAPI.getConversations(),
+      knowledgeAPI.getStats(),
     ])
     stats.value = {
       documentCount: docsRes.total || 0,
       conversationCount: chatsRes.conversations?.length || 0,
+      chunkCount: knowledgeRes.chunk_count || 0,
     }
   } catch (err) {
     // 忽略首页统计加载错误
