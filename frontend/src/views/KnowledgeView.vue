@@ -187,7 +187,7 @@ const renderChart = (data) => {
             <div style="width:260px;font-size:13px;line-height:1.6;box-sizing:border-box">
               <div style="color:${params.color};font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${d._title || '未知文献'}</div>
               <div style="color:#999;margin:2px 0">第 ${d._page} 页 · 分块 ${d._chunk}</div>
-              <div style="color:#555;white-space:normal;word-break:break-all">${d._preview || ''}</div>
+              <div style="color:#555;white-space:normal;word-break:break-all">${d._preview ? d._preview + '…' : ''}</div>
             </div>`
         },
         confine: true,
