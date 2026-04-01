@@ -63,7 +63,7 @@ class VectorStoreService:
             batch_size = 100
             for start in range(0, len(ids), batch_size):
                 end = start + batch_size
-                self._collection.add(
+                self._collection.upsert(
                     ids=ids[start:end],
                     documents=documents[start:end],
                     metadatas=metadatas[start:end],
@@ -124,12 +124,16 @@ class VectorStoreService:
         return search_results
 
     def delete_document(self, document_id: int):
-        """删除指定文献的所有向量"""
+        """删除指定文献的所有向量，先查出 ID 再按 ID 删除，比 where 过滤更可靠"""
         try:
-            self._collection.delete(
-                where={"document_id": str(document_id)}
+            result = self._collection.get(
+                where={"document_id": str(document_id)},
+                include=[],
             )
-            print(f"[VectorStore] 已删除文献 {document_id} 的所有向量")
+            ids = result.get("ids") or []
+            if ids:
+                self._collection.delete(ids=ids)
+            print(f"[VectorStore] 已删除文献 {document_id} 的 {len(ids)} 条向量")
         except Exception as e:
             print(f"[VectorStore] 删除文献向量错误: {e}")
 
@@ -147,10 +151,34 @@ class VectorStoreService:
             else {"document_id": {"$in": str_ids}}
         )
         try:
-            return self._collection.get(
+            # 第一步：不含 embeddings，拿全部 id/documents/metadatas（无大小限制）
+            meta_result = self._collection.get(
                 where=where_filter,
-                include=["embeddings", "documents", "metadatas"],
+                include=["documents", "metadatas"],
             )
+            all_ids = meta_result.get("ids") or []
+            all_documents = meta_result.get("documents") or []
+            all_metadatas = meta_result.get("metadatas") or []
+
+            if not all_ids:
+                return {"ids": [], "embeddings": [], "documents": [], "metadatas": []}
+
+            # 第二步：按 ID 小批量拉取 embeddings，每批 20 条（≈160KB），避免字节截断
+            all_embeddings = []
+            for i in range(0, len(all_ids), 20):
+                batch_ids = all_ids[i: i + 20]
+                emb_batch = self._collection.get(
+                    ids=batch_ids,
+                    include=["embeddings"],
+                )
+                all_embeddings.extend(emb_batch.get("embeddings") or [])
+
+            return {
+                "ids": all_ids,
+                "embeddings": all_embeddings,
+                "documents": all_documents,
+                "metadatas": all_metadatas,
+            }
         except Exception as e:
             print(f"[VectorStore] 获取 embeddings 失败: {e}")
             return {"ids": [], "embeddings": [], "documents": [], "metadatas": []}

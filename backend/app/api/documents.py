@@ -40,6 +40,10 @@ def process_document_async(app, document_id):
         if not doc:
             return
 
+        # 已在处理中或已完成，跳过（防止 Flask reloader 双进程重复触发）
+        if doc.status in ("processing", "ready"):
+            return
+
         try:
             # 1. 更新状态为 processing
             doc.status = "processing"
