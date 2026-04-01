@@ -72,7 +72,7 @@ class RAGService:
             # 2. 向量检索
             retrieved_chunks = self.vector_store.search(
                 query_embedding=query_embedding,
-                n_results=5,
+                n_results=7,
                 filter_doc_ids=doc_ids,
             )
 
@@ -95,8 +95,12 @@ class RAGService:
                     # 5. 调用豆包生成答案（temperature 调低以减少创造性发挥）
                     answer = self.llm_client.generate(rag_prompt, system_prompt=SYSTEM_PROMPT_RAG, temperature=0.1)
 
-                    # 6. 解析引用编号
-                    sources = self.parse_citations(answer, relevant_chunks)
+                    # 6. 解析引用编号（若 LLM 明确表示未找到相关内容，不返回来源）
+                    no_content_phrases = ["没有找到", "未找到", "没有相关", "暂无相关", "建议上传相关文献"]
+                    if any(p in answer for p in no_content_phrases):
+                        sources = []
+                    else:
+                        sources = self.parse_citations(answer, relevant_chunks)
 
         # 6. 保存会话和消息
         if conversation_id is None:
