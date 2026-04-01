@@ -133,6 +133,28 @@ class VectorStoreService:
         except Exception as e:
             print(f"[VectorStore] 删除文献向量错误: {e}")
 
+    def get_chunks_with_embeddings(self, document_ids: List[int]) -> dict:
+        """
+        获取指定文献的所有 chunk 内容、元数据和向量，用于知识库可视化。
+        返回 ChromaDB get() 的原始结果：ids, embeddings, documents, metadatas
+        """
+        if not document_ids:
+            return {"ids": [], "embeddings": [], "documents": [], "metadatas": []}
+        str_ids = [str(did) for did in document_ids]
+        where_filter = (
+            {"document_id": str_ids[0]}
+            if len(str_ids) == 1
+            else {"document_id": {"$in": str_ids}}
+        )
+        try:
+            return self._collection.get(
+                where=where_filter,
+                include=["embeddings", "documents", "metadatas"],
+            )
+        except Exception as e:
+            print(f"[VectorStore] 获取 embeddings 失败: {e}")
+            return {"ids": [], "embeddings": [], "documents": [], "metadatas": []}
+
     def get_collection_count(self) -> int:
         """获取集合中的总文档数"""
         return self._collection.count()

@@ -27,11 +27,13 @@ def create_app(config_class=Config):
     from .api.documents import documents_bp
     from .api.chat import chat_bp
     from .api.tools import tools_bp
+    from .api.knowledge import knowledge_bp
 
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(documents_bp, url_prefix="/api/documents")
     app.register_blueprint(chat_bp, url_prefix="/api/chat")
     app.register_blueprint(tools_bp, url_prefix="/api/tools")
+    app.register_blueprint(knowledge_bp, url_prefix="/api/knowledge")
 
     # 初始化工具注册表
     from .services.tool_registry import tool_registry

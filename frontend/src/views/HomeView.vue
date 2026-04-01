@@ -15,6 +15,9 @@
         <el-menu-item index="/library">
           <el-icon><Collection /></el-icon>文献库
         </el-menu-item>
+        <el-menu-item index="/knowledge">
+          <el-icon><DataAnalysis /></el-icon>知识库
+        </el-menu-item>
         <el-menu-item index="/chat">
           <el-icon><ChatDotRound /></el-icon>智能问答
         </el-menu-item>
@@ -66,12 +69,12 @@
           </el-card>
         </el-col>
         <el-col :span="8">
-          <el-card shadow="hover" class="feature-card" @click="$router.push('/documents')">
-            <div class="feature-icon">🔧</div>
-            <h3>智能工具</h3>
-            <p>翻译、摘要解读等辅助工具，助力科研</p>
+          <el-card shadow="hover" class="feature-card" @click="$router.push('/knowledge')">
+            <div class="feature-icon">🗺️</div>
+            <h3>知识库</h3>
+            <p>向量空间可视化，探索文献语义分布与主题聚类</p>
             <div class="stats">
-              <el-statistic title="可用工具" :value="2" />
+              <el-statistic title="可用工具" :value="1" />
             </div>
           </el-card>
         </el-col>

@@ -130,6 +130,16 @@ export const chatAPI = {
   },
 }
 
+// ============ 知识库可视化 API ============
+export const knowledgeAPI = {
+  getStats() {
+    return request.get('/knowledge/stats')
+  },
+  getMapData() {
+    return request.get('/knowledge/map-data', { timeout: 120000 })
+  },
+}
+
 // ============ 工具 API ============
 export const toolAPI = {
   translate(data) {

@@ -34,3 +34,5 @@ class Config:
     ARK_BASE_URL = os.getenv("ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
     ARK_CHAT_MODEL = os.getenv("ARK_CHAT_MODEL", "doubao-1-5-pro-32k-250115")
     ARK_EMBED_MODEL = os.getenv("ARK_EMBED_MODEL", "doubao-embedding-vision-251215")
+    ARK_VISION_MODEL = os.getenv("ARK_VISION_MODEL", "")
+

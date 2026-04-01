@@ -42,6 +42,12 @@ const routes = [
     component: () => import('../views/HistoryView.vue'),
     meta: { requiresAuth: true },
   },
+  {
+    path: '/knowledge',
+    name: 'Knowledge',
+    component: () => import('../views/KnowledgeView.vue'),
+    meta: { requiresAuth: true },
+  },
 ]
 
 const router = createRouter({
