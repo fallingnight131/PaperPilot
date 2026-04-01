@@ -99,8 +99,18 @@ const renderedContent = computed(() => {
       blocks.push({ math: math.trim(), display: true })
       return `@@MATH_${blocks.length - 1}@@`
     })
+    // 行间公式 \[...\]
+    .replace(/\\\[([\s\S]+?)\\\]/g, (_, math) => {
+      blocks.push({ math: math.trim(), display: true })
+      return `@@MATH_${blocks.length - 1}@@`
+    })
     // 行内公式 $...$（单行，长度限制避免误匹配）
     .replace(/\$([^\n$]{1,400}?)\$/g, (_, math) => {
+      blocks.push({ math: math.trim(), display: false })
+      return `@@MATH_${blocks.length - 1}@@`
+    })
+    // 行内公式 \(...\)
+    .replace(/\\\(([^\n]{1,400}?)\\\)/g, (_, math) => {
       blocks.push({ math: math.trim(), display: false })
       return `@@MATH_${blocks.length - 1}@@`
     })
