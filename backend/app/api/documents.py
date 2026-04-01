@@ -60,6 +60,8 @@ def process_document_async(app, document_id):
             parser = PDFParser()
             metadata = parser.extract_metadata(doc.file_path)
 
+            if metadata.get("title"):
+                doc.title = metadata["title"]
             doc.authors = metadata.get("authors") or ""
             doc.doi = metadata.get("doi") or ""
             if metadata.get("abstract"):
