@@ -31,16 +31,25 @@
     <el-main class="main-content">
       <!-- 顶部工具栏 -->
       <div class="toolbar">
-        <div class="toolbar-title">
-          <h3>知识库可视化</h3>
-          <span class="total-tip" v-if="stats">
-            {{ stats.doc_count }} 篇文献 · {{ stats.chunk_count }} 个分块
-          </span>
-        </div>
+        <h3 class="toolbar-title">知识库可视化</h3>
         <el-button type="primary" :loading="loading" @click="loadMapData" icon="RefreshRight">
           {{ hasData ? '刷新' : '生成可视化' }}
         </el-button>
       </div>
+
+      <!-- 统计卡片 -->
+      <el-row :gutter="16" v-if="stats">
+        <el-col :span="12">
+          <el-card class="stat-card">
+            <el-statistic title="已就绪文献" :value="stats.doc_count" />
+          </el-card>
+        </el-col>
+        <el-col :span="12">
+          <el-card class="stat-card">
+            <el-statistic title="向量分块总数" :value="stats.chunk_count" />
+          </el-card>
+        </el-col>
+      </el-row>
 
       <!-- 地图区域 -->
       <div class="map-section">
@@ -175,10 +184,10 @@ const renderChart = (data) => {
         formatter(params) {
           const d = params.data
           return `
-            <div style="max-width:280px;font-size:13px;line-height:1.6">
-              <b style="color:${params.color}">${d._title || '未知文献'}</b><br>
-              第 ${d._page} 页 · 分块 ${d._chunk}<br>
-              <span style="color:#666">${d._preview || ''}</span>
+            <div style="width:260px;font-size:13px;line-height:1.6;box-sizing:border-box">
+              <div style="color:${params.color};font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${d._title || '未知文献'}</div>
+              <div style="color:#999;margin:2px 0">第 ${d._page} 页 · 分块 ${d._chunk}</div>
+              <div style="color:#555;white-space:normal;word-break:break-all">${d._preview || ''}</div>
             </div>`
         },
         confine: true,
@@ -245,9 +254,15 @@ onBeforeUnmount(() => {
   align-items: center;
 }
 
-.toolbar-title { display: flex; align-items: baseline; gap: 12px; }
-.toolbar-title h3 { margin: 0; font-size: 18px; color: #303133; }
-.total-tip { font-size: 13px; color: #909399; }
+.toolbar-title {
+  margin: 0;
+  font-size: 18px;
+  color: #303133;
+}
+
+.stat-card {
+  text-align: center;
+}
 
 .map-section {
   flex: 1;
