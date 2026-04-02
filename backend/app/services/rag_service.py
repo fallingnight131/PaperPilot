@@ -5,6 +5,7 @@ from ..services.doubao_client import DoubaoClient
 from ..services.vector_store import VectorStoreService
 from ..models.conversation import Conversation, Message
 from ..models.document import Document
+from ..models.chunk import DocumentChunk
 from ..extensions import db
 
 # ---- 系统提示词 ----
@@ -60,6 +61,8 @@ class RAGService:
         is_casual = self._is_casual_query(question)
         is_library_query = self._is_library_query(question)
 
+        is_overview = self._is_overview_question(question)
+
         if is_casual:
             answer = self._generate_casual_reply(question)
             sources = []
@@ -67,6 +70,12 @@ class RAGService:
         elif is_library_query:
             # 文献库查询：直接查数据库，避免 LLM 编造文献
             answer, sources = self._answer_library_query(question, user_id, doc_ids)
+            retrieved_chunks = []
+        elif is_overview and doc_ids and len(doc_ids) == 1:
+            # 单篇文章综述：顺序读取全文 chunk，覆盖面比向量检索更全
+            doc = Document.query.get(doc_ids[0])
+            doc_title = doc.title if doc else "未知文献"
+            answer, sources = self._answer_with_full_doc(question, doc_ids[0], doc_title)
             retrieved_chunks = []
         else:
             # 2. 改写问题为检索友好的关键词（带入历史，还原"上式""它"等指代词）
@@ -177,6 +186,65 @@ class RAGService:
                 content = content[:300] + ("..." if len(content) > 300 else "")
             result.append({"role": msg.role, "content": content})
         return result
+
+    def _is_overview_question(self, question: str) -> bool:
+        """判断是否为「综述单篇文章」类问题"""
+        q = question.strip()
+        patterns = [
+            r'(讲讲|介绍|总结|概述|综述|讲一讲|说说|讲述|解读|分析).{0,15}(这篇|这个|该|此).{0,8}(文章|论文|文献|paper)',
+            r'(这篇|该|此).{0,8}(文章|论文|文献|paper).{0,15}(讲|说|介绍|总结|主要|内容|关于|写了)',
+            r'(文章|论文|文献).{0,8}(的内容|讲了什么|说了什么|主要内容|核心内容|研究了什么)',
+            r'能不能.{0,5}(给我)?.{0,5}(讲讲|介绍|总结).{0,10}(文章|论文|文献)',
+        ]
+        for pattern in patterns:
+            if re.search(pattern, q):
+                return True
+        return False
+
+    def _answer_with_full_doc(self, question: str, doc_id: int, doc_title: str) -> tuple:
+        """
+        综述类问题：按 chunk_index 顺序读取全文（最多30块、15000字），
+        直接送 LLM 生成结构化综述，覆盖面比向量检索更全。
+        """
+        chunks = (
+            DocumentChunk.query
+            .filter_by(document_id=doc_id)
+            .order_by(DocumentChunk.chunk_index)
+            .limit(30)
+            .all()
+        )
+        if not chunks:
+            answer = "该文献尚未完成解析，无法生成综述。"
+            return answer, []
+
+        full_text = "\n\n".join(c.content for c in chunks)[:15000]
+
+        prompt = f"""请基于以下文献内容，详细回答用户的问题。
+
+文献标题：{doc_title}
+
+文献内容：
+{full_text}
+
+用户问题：{question}
+
+要求：
+1. 结构清晰，分「研究背景」「主要内容」「研究方法」「结论与创新点」等章节
+2. 严格基于以上文献内容，不要补充文献外的信息
+3. 使用中文，专业术语保留英文
+"""
+        answer = self.llm_client.generate(
+            prompt, system_prompt=SYSTEM_PROMPT_RAG, temperature=0.1
+        )
+        sources = [{
+            "document_id": doc_id,
+            "title": doc_title,
+            "chunk_index": 0,
+            "page_number": 1,
+            "content": full_text[:200],
+            "score": 1.0,
+        }]
+        return answer, sources
 
     def _is_library_query(self, question: str) -> bool:
         """判断是否为「查询文献库」类问题（询问库里有没有某方向/某类文献）"""
