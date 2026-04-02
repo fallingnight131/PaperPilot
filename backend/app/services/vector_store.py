@@ -137,6 +137,30 @@ class VectorStoreService:
         except Exception as e:
             print(f"[VectorStore] 删除文献向量错误: {e}")
 
+    def update_document_metadata(self, document_id: int, title: str = None, authors: str = None):
+        """更新指定文献所有 chunk 的 metadata（标题、作者）"""
+        try:
+            result = self._collection.get(
+                where={"document_id": str(document_id)},
+                include=["metadatas"],
+            )
+            ids = result.get("ids") or []
+            metadatas = result.get("metadatas") or []
+            if not ids:
+                return
+            updated = []
+            for meta in metadatas:
+                new_meta = dict(meta)
+                if title is not None:
+                    new_meta["title"] = title
+                if authors is not None:
+                    new_meta["authors"] = authors
+                updated.append(new_meta)
+            self._collection.update(ids=ids, metadatas=updated)
+            print(f"[VectorStore] 已更新文献 {document_id} 的 {len(ids)} 条向量 metadata")
+        except Exception as e:
+            print(f"[VectorStore] 更新 metadata 失败: {e}")
+
     def get_chunks_with_embeddings(self, document_ids: List[int]) -> dict:
         """
         获取指定文献的所有 chunk 内容、元数据和向量，用于知识库可视化。

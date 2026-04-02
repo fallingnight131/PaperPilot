@@ -301,6 +301,16 @@ def update_document(doc_id):
             doc.doi = doi
 
         db.session.commit()
+
+        # 同步更新向量库中的 metadata
+        if doc.status == "ready" and ("title" in data or "authors" in data):
+            vector_store = VectorStoreService()
+            vector_store.update_document_metadata(
+                doc_id,
+                title=doc.title if "title" in data else None,
+                authors=doc.authors if "authors" in data else None,
+            )
+
         return success_response(doc.to_dict(), "文献信息已更新")
 
     except Exception as e:
