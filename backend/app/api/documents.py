@@ -1,6 +1,7 @@
 import os
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 from flask import Blueprint, request, jsonify, current_app, send_file
@@ -28,6 +29,12 @@ def error_response(message="error", code=1, status_code=400):
 
 ALLOWED_EXTENSIONS = {"pdf"}
 
+# 最多同时处理 3 篇文献，防止无限制创建线程
+_doc_executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="doc_proc")
+# 正在处理的 document_id 集合 + 锁，防止同一文献被重复提交
+_processing_ids: set = set()
+_processing_lock = threading.Lock()
+
 
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -42,12 +49,26 @@ def _set_progress(doc, progress: int, message: str):
 
 def process_document_async(app, document_id):
     """异步处理文献：解析 PDF、生成 embedding、写入向量库"""
+    # 原子检查：已在内存队列中则跳过（防止线程池重复提交同一文献）
+    with _processing_lock:
+        if document_id in _processing_ids:
+            return
+        _processing_ids.add(document_id)
+
+    try:
+        _do_process_document(app, document_id)
+    finally:
+        with _processing_lock:
+            _processing_ids.discard(document_id)
+
+
+def _do_process_document(app, document_id):
+    """实际处理逻辑，由 process_document_async 包装调用"""
     with app.app_context():
         doc = Document.query.get(document_id)
         if not doc:
             return
 
-        # 已在处理中或已完成，跳过（防止 Flask reloader 双进程重复触发）
         if doc.status in ("processing", "ready"):
             return
 
@@ -215,11 +236,9 @@ def upload_document():
         db.session.add(doc)
         db.session.commit()
 
-        # 异步触发解析任务
+        # 异步触发解析任务（线程池，最多3个并发）
         app = current_app._get_current_object()
-        thread = threading.Thread(target=process_document_async, args=(app, doc.id))
-        thread.daemon = True
-        thread.start()
+        _doc_executor.submit(process_document_async, app, doc.id)
 
         return success_response({"document_id": doc.id}, "文献上传成功，正在处理中"), 201
 
